@@ -1,3 +1,6 @@
+import { useState } from 'react';
+import { TimePicker, DatePicker } from './DrumPicker';
+
 const typeLabels = {
   day: '📅 Day',
   announcement: '📢 Announcement',
@@ -76,23 +79,123 @@ function Row({ children }) {
   return <div style={{ display: 'flex', gap: 8, marginBottom: 8, alignItems: 'center' }}>{children}</div>;
 }
 
+function toInput(t) {
+  if (!t) return '';
+  const match = t.match(/(\d+):(\d+)\s*(am|pm)/i);
+  if (!match) return '';
+  let h = parseInt(match[1]);
+  const m = match[2];
+  const ampm = match[3].toLowerCase();
+  if (ampm === 'pm' && h !== 12) h += 12;
+  if (ampm === 'am' && h === 12) h = 0;
+  return `${String(h).padStart(2,'0')}:${m}`;
+}
+
+function fromInput(v) {
+  if (!v) return '';
+  const [h, m] = v.split(':').map(Number);
+  const ampm = h >= 12 ? 'pm' : 'am';
+  const h12 = h % 12 || 12;
+  return `${h12}:${String(m).padStart(2,'0')}${ampm}`;
+}
+
+const TIME_SLOTS = [];
+for (let h = 0; h < 24; h++) {
+  for (let m = 0; m < 60; m += 15) {
+    const ampm = h >= 12 ? 'pm' : 'am';
+    const h12 = h % 12 || 12;
+    TIME_SLOTS.push(`${h12}:${String(m).padStart(2,'0')}${ampm}`);
+  }
+}
+
+function TimeDropdown({ value, onChange, placeholder = 'Time' }) {
+  const [custom, setCustom] = useState(false);
+  const isPreset = TIME_SLOTS.includes(value);
+  const isEmpty = !value;
+
+  return (
+    <div style={{ position: 'relative' }}>
+      {!custom ? (
+        <div style={{ position: 'relative' }}>
+          <select
+            value={isPreset ? value : (isEmpty ? '' : '__custom__')}
+            onChange={e => {
+              if (e.target.value === '__custom__') setCustom(true);
+              else onChange(e.target.value);
+            }}
+            style={{
+              appearance: 'none', WebkitAppearance: 'none',
+              padding: '7px 28px 7px 10px',
+              fontSize: 12, width: 110,
+              background: value ? '#fff8ee' : '#fff',
+              border: `1.5px solid ${value ? '#c9a96e' : '#e0cba8'}`,
+              borderRadius: 8,
+              color: value ? '#5c3d1e' : '#b0956e',
+              fontWeight: value ? 600 : 400,
+              cursor: 'pointer',
+              outline: 'none',
+            }}
+          >
+            <option value="">{placeholder}</option>
+            {TIME_SLOTS.map(t => <option key={t} value={t}>{t}</option>)}
+            <option value="__custom__">Custom…</option>
+          </select>
+          <span style={{
+            position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)',
+            fontSize: 9, color: '#b0956e', pointerEvents: 'none',
+          }}>▾</span>
+        </div>
+      ) : (
+        <input
+          type="time"
+          value={toInput(value)}
+          onChange={e => onChange(fromInput(e.target.value))}
+          onBlur={() => setCustom(false)}
+          autoFocus
+          style={{
+            padding: '7px 10px', fontSize: 12, width: 110,
+            border: '1.5px solid #c9a96e', borderRadius: 8,
+            background: '#fff8ee', color: '#5c3d1e', fontWeight: 600,
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
 function DayEditor({ data, onUpdate }) {
   const upd = (i, f, v) => { const items = [...data.items]; items[i] = { ...items[i], [f]: v }; onUpdate({ ...data, items }); };
-  const add = () => onUpdate({ ...data, items: [...data.items, { time: '', label: '', note: '' }] });
+  const add = () => onUpdate({ ...data, items: [...data.items, { time: '', timeTo: '', label: '', note: '' }] });
   const rem = i => onUpdate({ ...data, items: data.items.filter((_, j) => j !== i) });
 
   return (
     <div>
-      {data.items.map((item, i) => (
-        <div key={i} style={{ marginBottom: 10, padding: '10px 12px', background: '#faf6f0', borderRadius: 8, border: '1px solid #eedfc4' }}>
-          <Row>
-            <input value={item.time} onChange={e => upd(i, 'time', e.target.value)} placeholder="Time" style={{ width: 130, flex: 'none' }} />
-            <input value={item.label} onChange={e => upd(i, 'label', e.target.value)} placeholder="Event name" />
+      {/* Optional date */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+        <span style={{ fontSize: 11, color: '#b0956e', fontWeight: 600, whiteSpace: 'nowrap' }}>Date</span>
+        <DatePicker value={data.date ?? ''} onChange={v => onUpdate({ ...data, date: v })} />
+      </div>
+
+      {/* Column headers */}
+      <div style={{ display: 'grid', gridTemplateColumns: '110px 14px 110px 1fr 1fr 28px', gap: 8, marginBottom: 6, padding: '0 2px' }}>
+        {['Start', '', 'End', 'Event', 'Note', ''].map((h, i) => (
+          <span key={i} style={{ fontSize: 10, color: '#b0956e', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5 }}>{h}</span>
+        ))}
+      </div>
+
+      {/* Rows */}
+      <div style={{ maxHeight: 280, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 6, paddingRight: 2, scrollbarWidth: 'thin', scrollbarColor: '#e0cba8 transparent' }}>
+        {data.items.map((item, i) => (
+          <div key={i} style={{ display: 'grid', gridTemplateColumns: '110px 14px 110px 1fr 1fr 28px', gap: 8, alignItems: 'center' }}>
+            <TimePicker value={item.time} onChange={v => upd(i, 'time', v)} placeholder="Start" />
+            <span style={{ color: '#c9a96e', textAlign: 'center', fontSize: 12 }}>→</span>
+            <TimePicker value={item.timeTo ?? ''} onChange={v => upd(i, 'timeTo', v)} placeholder="End" />
+            <input value={item.label} onChange={e => upd(i, 'label', e.target.value)} placeholder="Event name" style={{ fontSize: 13 }} />
+            <input value={item.note ?? ''} onChange={e => upd(i, 'note', e.target.value)} placeholder="Note" style={{ fontSize: 13, color: '#7a6352' }} />
             <Btn onClick={() => rem(i)} danger>✕</Btn>
-          </Row>
-          <input value={item.note ?? ''} onChange={e => upd(i, 'note', e.target.value)} placeholder="Note (e.g. See Holy Week Schedule)" style={{ fontSize: 12, color: '#7a6352' }} />
-        </div>
-      ))}
+          </div>
+        ))}
+      </div>
       <AddBtn onClick={add}>+ Add event</AddBtn>
     </div>
   );
@@ -144,7 +247,7 @@ function EventEditor({ data, onUpdate }) {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
       <input value={data.title} onChange={e => onUpdate({ ...data, title: e.target.value })} placeholder="Event title" style={{ fontWeight: 600 }} />
       <input value={data.subtitle} onChange={e => onUpdate({ ...data, subtitle: e.target.value })} placeholder="Subtitle (optional)" />
-      <input value={data.time} onChange={e => onUpdate({ ...data, time: e.target.value })} placeholder="Time (optional)" />
+      <TimePicker value={data.time} onChange={v => onUpdate({ ...data, time: v })} placeholder="Time" />
       <input value={data.note} onChange={e => onUpdate({ ...data, note: e.target.value })} placeholder="Note (optional)" />
     </div>
   );
