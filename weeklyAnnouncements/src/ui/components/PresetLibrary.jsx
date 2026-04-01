@@ -1,8 +1,8 @@
 import { useState } from 'react';
-import { useDraggable } from '@dnd-kit/core';
+import { useDraggable, DndContext, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { SortableContext, useSortable, verticalListSortingStrategy, arrayMove } from '@dnd-kit/sortable';
+import { restrictToVerticalAxis, restrictToParentElement } from '@dnd-kit/modifiers';
 import { CSS } from '@dnd-kit/utilities';
-import { DndContext, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 import { createPreset } from '../../core/domain/Bulletin';
 import { TimePicker } from './DrumPicker';
 import ImageUpload from './ImageUpload';
@@ -160,7 +160,7 @@ export default function PresetLibrary({ presets, onAdd, onEdit, onDelete }) {
       {presets.map(p =>
         editingId === p.id
           ? <PresetForm key={p.id} initial={p} onSave={form => { onEdit({ ...p, ...form }); setEditingId(null); }} onCancel={() => setEditingId(null)} />
-          : <DraggablePreset key={p.id} preset={p} onEdit={p => setEditingId(p.id)} onDelete={onDelete} isEditing={editingId === p.id} />
+          : <SortablePreset key={p.id} preset={p} onEdit={p => setEditingId(p.id)} onDelete={onDelete} isEditing={editingId === p.id} />
       )}
 
       {creating

@@ -2,17 +2,45 @@ export const CHURCH_NAME = 'St. Philopater Mercurius & St. Mina';
 
 export const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
-export const createBulletin = (presetName = 'Weekly Bulletin') => ({
-  id: crypto.randomUUID(),
-  presetName,
-  weekLabel: getWeekLabel(),
-  days: DAYS.map(day => ({ day, date: '', events: [] })),
-  announcements: [],
-  contacts: [],
-  images: [],
-  createdAt: new Date().toISOString(),
-  updatedAt: new Date().toISOString(),
-});
+function getMondayOfWeek(date = new Date()) {
+  const d = new Date(date);
+  const day = d.getDay();
+  const diff = day === 0 ? -6 : 1 - day;
+  d.setDate(d.getDate() + diff);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+function toISO(date) {
+  return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`;
+}
+
+export function getDatesForWeek(startDate = new Date()) {
+  const monday = getMondayOfWeek(startDate);
+  return DAYS.map((day, i) => {
+    const d = new Date(monday);
+    d.setDate(monday.getDate() + i);
+    return { day, date: toISO(d) };
+  });
+}
+
+function getWeekLabel(date = new Date()) {
+  const monday = getMondayOfWeek(date);
+  return monday.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+}
+
+export const createBulletin = (presetName = 'Weekly Bulletin') => {
+  const dates = getDatesForWeek();
+  return {
+    id: crypto.randomUUID(),
+    presetName,
+    weekLabel: getWeekLabel(),
+    days: DAYS.map((day, i) => ({ day, date: dates[i].date, events: [] })),
+    images: [],
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+};
 
 export const updateBulletin = (bulletin, changes) => ({
   ...bulletin,
@@ -51,11 +79,3 @@ export const DEFAULT_PRESETS = [
   createPreset('Youth Meeting', { color: '#6d3b8e', defaultTime: '6:00pm', defaultTimeTo: '8:00pm' }),
   createPreset('Vespers', { color: '#8b4513', defaultTime: '6:00pm', defaultTimeTo: '7:30pm' }),
 ];
-
-function getWeekLabel() {
-  const now = new Date();
-  const day = now.getDay();
-  const diff = now.getDate() - day + (day === 0 ? -6 : 1);
-  const monday = new Date(now.setDate(diff));
-  return monday.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
-}

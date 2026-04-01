@@ -4,7 +4,7 @@ import { arrayMove } from '@dnd-kit/sortable';
 import { FirebaseBulletinRepo } from '../../adapters/firebase/FirebaseBulletinRepo';
 import { ReactPDFExporter } from '../../adapters/export/ReactPDFExporter.jsx';
 import { TelegramAdapter } from '../../adapters/telegram/TelegramAdapter';
-import { createBulletin, updateBulletin, createEvent, DEFAULT_PRESETS, CHURCH_NAME } from '../../core/domain/Bulletin';
+import { createBulletin, updateBulletin, createEvent, DEFAULT_PRESETS, CHURCH_NAME, getDatesForWeek } from '../../core/domain/Bulletin';
 import PresetLibrary from './PresetLibrary';
 import WeeklyView from './WeeklyView';
 
@@ -171,7 +171,15 @@ export default function AdminPanel() {
                 value={toInputDate(bulletin.weekLabel)}
                 onChange={e => {
                   const d = new Date(e.target.value + 'T00:00:00');
-                  setBulletin(b => updateBulletin(b, { weekLabel: d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) }));
+                  const label = d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+                  const datesForWeek = getDatesForWeek(d);
+                  setBulletin(b => updateBulletin(b, {
+                    weekLabel: label,
+                    days: b.days.map((day, i) => {
+                      const match = datesForWeek.find(dw => dw.day === day.day);
+                      return match ? { ...day, date: match.date } : day;
+                    }),
+                  }));
                 }}
                 style={{ fontSize: 12, padding: '5px 8px', border: '1.5px solid #e0cba8', borderRadius: 7, background: '#fdf6ec', color: '#5c3d1e', outline: 'none' }}
               />
