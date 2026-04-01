@@ -1,22 +1,18 @@
-import { useState, useEffect } from 'react';
-import { DndContext, DragOverlay, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
-import { arrayMove } from '@dnd-kit/sortable';
+import { useState, useEffect, useCallback } from 'react';
 import { FirebaseBulletinRepo } from '../../adapters/firebase/FirebaseBulletinRepo';
 import { ReactPDFExporter } from '../../adapters/export/ReactPDFExporter.jsx';
 import { TelegramAdapter } from '../../adapters/telegram/TelegramAdapter';
 import { createBulletin, updateBulletin, createEvent, DEFAULT_PRESETS, CHURCH_NAME, getDatesForWeek } from '../../core/domain/Bulletin';
+import { fetchPresets, savePreset, deletePreset as deletePresetFS, savePresetOrder } from '../../adapters/firebase/FirebasePresetRepo';
+import { arrayMove } from '@dnd-kit/sortable';
+import DragProvider from '../drag/DragContext.jsx';
 import PresetLibrary from './PresetLibrary';
 import WeeklyView from './WeeklyView';
+import ExtrasPanel from './ExtrasPanel';
 
 const repo = new FirebaseBulletinRepo();
 const exporter = new ReactPDFExporter();
 const telegram = new TelegramAdapter();
-const PRESETS_KEY = 'wa_presets';
-
-function loadPresets() {
-  try { return JSON.parse(localStorage.getItem(PRESETS_KEY)) ?? DEFAULT_PRESETS; }
-  catch { return DEFAULT_PRESETS; }
-}
 
 function toInputDate(weekLabel) {
   try {
@@ -29,74 +25,100 @@ function toInputDate(weekLabel) {
 export default function AdminPanel() {
   const [bulletin, setBulletin] = useState(createBulletin('Weekly Bulletin'));
   const [savedBulletins, setSavedBulletins] = useState([]);
-  const [presets, setPresets] = useState(loadPresets);
-  const [active, setActive] = useState(null);
+  const [presets, setPresets] = useState([]);
   const [status, setStatus] = useState('');
   const [statusType, setStatusType] = useState('info');
   const [publishing, setPublishing] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
-
-  useEffect(() => { repo.listPresets().then(setSavedBulletins); }, []);
-  useEffect(() => { localStorage.setItem(PRESETS_KEY, JSON.stringify(presets)); }, [presets]);
+  useEffect(() => {
+    repo.listPresets().then(setSavedBulletins);
+    fetchPresets().then(ps => {
+      if (ps.length === 0) {
+        Promise.all(DEFAULT_PRESETS.map((p, i) => savePreset({ ...p, order: i })))
+          .then(() => setPresets(DEFAULT_PRESETS));
+      } else {
+        setPresets(ps);
+      }
+    });
+  }, []);
 
   const setMsg = (msg, type = 'info') => {
-    setStatus(msg); setStatusType(type);
+    setStatus(msg);
+    setStatusType(type);
     setTimeout(() => setStatus(''), 3500);
   };
 
-  const handleDragStart = ({ active }) => setActive(active);
+  const addPreset = async p => {
+    const ordered = { ...p, order: presets.length };
+    await savePreset(ordered);
+    setPresets(ps => [...ps, ordered]);
+  };
 
-  const handleDragEnd = ({ active, over }) => {
-    setActive(null);
-    if (!over) return;
+  const editPreset = async p => {
+    await savePreset(p);
+    setPresets(ps => ps.map(x => x.id === p.id ? p : x));
+  };
 
-    const activeData = active.data.current;
+  const removePreset = async id => {
+    await deletePresetFS(id);
+    setPresets(ps => ps.filter(p => p.id !== id));
+  };
 
-    // Within-day reorder (sortable)
-    if (activeData?.type === 'event') {
-      const { dayIdx } = activeData;
-      const days = [...bulletin.days];
-      const day = days[dayIdx];
-      const ids = day.events.map(e => e.id);
-      const oldIdx = ids.indexOf(active.id);
-      const newIdx = ids.indexOf(over.id);
+  const reorderPresets = async reordered => {
+    setPresets(reordered);
+    await savePresetOrder(reordered);
+  };
 
-      // Same day reorder
-      if (oldIdx !== -1 && newIdx !== -1 && oldIdx !== newIdx) {
-        days[dayIdx] = { ...day, events: arrayMove(day.events, oldIdx, newIdx) };
-        setBulletin(b => updateBulletin(b, { days }));
-        return;
-      }
+  const handleDrop = useCallback((dragData, zoneData) => {
+    const { dayIdx } = zoneData;
+    const days = [...bulletin.days];
 
-      // Move to different day
-      const overMatch = over.id.toString().match(/^day-(\d+)$/);
-      if (overMatch) {
-        const toDayIdx = parseInt(overMatch[1]);
-        if (toDayIdx === dayIdx) return;
-        const eventIdx = activeData.eventIdx;
-        days[dayIdx] = { ...days[dayIdx], events: days[dayIdx].events.filter((_, i) => i !== eventIdx) };
-        days[toDayIdx] = { ...days[toDayIdx], events: [...days[toDayIdx].events, activeData.event] };
-        setBulletin(b => updateBulletin(b, { days }));
-      }
+    if (dragData.id && dragData.color) {
+      // Preset drop
+      const newEvent = createEvent(dragData);
+      days[dayIdx] = { ...days[dayIdx], events: [...days[dayIdx].events, newEvent] };
+      setBulletin(b => updateBulletin(b, { days }));
       return;
     }
 
-    // Drop preset or one-time onto a day
-    const overMatch = over.id.toString().match(/^day-(\d+)$/);
-    if (!overMatch) return;
-    const dayIdx = parseInt(overMatch[1]);
+    if (dragData.name === 'New Event') {
+      // One-time event
+      const newEvent = createEvent(null, { name: 'New Event' });
+      days[dayIdx] = { ...days[dayIdx], events: [...days[dayIdx].events, newEvent] };
+      setBulletin(b => updateBulletin(b, { days }));
+      return;
+    }
 
-    let newEvent;
-    if (activeData?.type === 'preset') newEvent = createEvent(activeData.preset);
-    else if (activeData?.type === 'one-time') newEvent = createEvent(null, { name: 'New Event' });
-    if (!newEvent) return;
+    if (dragData.event) {
+      // Move event between days
+      const { event, dayIdx: fromDay, eventIdx } = dragData;
+      if (fromDay === dayIdx) return;
+      days[fromDay] = { ...days[fromDay], events: days[fromDay].events.filter((_, i) => i !== eventIdx) };
+      days[dayIdx] = { ...days[dayIdx], events: [...days[dayIdx].events, event] };
+      setBulletin(b => updateBulletin(b, { days }));
+    }
+  }, [bulletin]);
 
+  const handleSort = useCallback((dragData, overData) => {
+    const fromIdx = dragData.index;
+    const toIdx = overData.index;
+    if (fromIdx === undefined || toIdx === undefined || fromIdx === toIdx) return;
+    reorderPresets(arrayMove(presets, fromIdx, toIdx));
+  }, [presets, reorderPresets]);
+
+  const handleEventReorder = useCallback((dragData, overData) => {
+    const { dayIdx: fromDay, eventIdx: fromIdx } = dragData;
+    const { dayIdx: toDay, eventIdx: toIdx } = overData;
+    if (fromDay !== toDay) return;
+    if (fromIdx === toIdx) return;
     const days = [...bulletin.days];
-    days[dayIdx] = { ...days[dayIdx], events: [...days[dayIdx].events, newEvent] };
+    const events = [...days[fromDay].events];
+    const [moved] = events.splice(fromIdx, 1);
+    events.splice(toIdx, 0, moved);
+    days[fromDay] = { ...days[fromDay], events };
     setBulletin(b => updateBulletin(b, { days }));
-  };
+  }, [bulletin]);
 
   const save = async () => {
     setSaving(true);
@@ -106,7 +128,10 @@ export default function AdminPanel() {
     setSaving(false);
   };
 
-  const load = b => { setBulletin(b); setMsg(`Loaded: ${b.presetName}`, 'info'); };
+  const load = b => {
+    setBulletin(b);
+    setMsg(`Loaded: ${b.presetName}`, 'info');
+  };
 
   const deleteSaved = async (e, id) => {
     e.stopPropagation();
@@ -122,18 +147,47 @@ export default function AdminPanel() {
       setMsg('Publishing to Telegram...', 'info');
       await telegram.publish(bulletin, blob);
       setMsg('Published!', 'success');
-    } catch (e) { setMsg(`Error: ${e.message}`, 'error'); }
+    } catch (e) {
+      setMsg(`Error: ${e.message}`, 'error');
+    }
+    setPublishing(false);
+  };
+
+  const publishAnnouncementsOnly = async () => {
+    setPublishing(true);
+    try {
+      const announcements = bulletin.announcements ?? [];
+      if (!announcements.length) {
+        setMsg('No announcements to send', 'info');
+        setPublishing(false);
+        return;
+      }
+      const text = [
+        `✝ *${CHURCH_NAME}*`,
+        `📢 *Announcements* — ${bulletin.weekLabel}`,
+        ``,
+        `━━━━━━━━━━━━━━━━━━━━`,
+        ``,
+        ...announcements.map(a => `• ${a.text}`),
+      ].join('\n');
+      await telegram._sendLongMessage(text);
+      const updated = updateBulletin(bulletin, { lastAnnouncementsSent: new Date().toISOString() });
+      setBulletin(updated);
+      await repo.save(updated);
+      setMsg('Announcements sent!', 'success');
+    } catch (e) {
+      setMsg(`Error: ${e.message}`, 'error');
+    }
     setPublishing(false);
   };
 
   const statusColor = { success: '#27ae60', error: '#c0392b', info: '#7a6352' }[statusType];
-  const activePreset = active?.data.current?.type === 'preset' ? active.data.current.preset : null;
 
   return (
-    <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+    <DragProvider onDrop={handleDrop} onSort={handleSort} onEventReorder={handleEventReorder}>
       <div style={{ minHeight: '100vh', background: '#f4ece0', fontFamily: 'Inter, sans-serif' }}>
 
-        {/* ── Header ── */}
+        {/* Header */}
         <div style={{ background: 'linear-gradient(135deg, #2e1a08 0%, #5c3d1e 100%)', boxShadow: '0 2px 24px rgba(46,26,8,0.3)' }}>
           <div style={{ maxWidth: 1400, margin: '0 auto', padding: '16px 32px', display: 'flex', alignItems: 'center', gap: 16 }}>
             <div style={{ width: 38, height: 38, borderRadius: '50%', background: 'rgba(212,160,23,0.15)', border: '1.5px solid rgba(212,160,23,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, color: '#d4a017', flexShrink: 0 }}>✝</div>
@@ -142,7 +196,6 @@ export default function AdminPanel() {
               <div style={{ color: '#fff', fontSize: 16, fontFamily: 'Playfair Display, serif', fontWeight: 600 }}>Weekly Announcements</div>
             </div>
             <div style={{ flex: 1 }} />
-            {/* Saved bulletins */}
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
               {savedBulletins.slice(0, 4).map(b => (
                 <div key={b.id} style={{ display: 'flex', background: 'rgba(255,255,255,0.07)', borderRadius: 7, overflow: 'hidden', border: '1px solid rgba(255,255,255,0.1)' }}>
@@ -155,7 +208,7 @@ export default function AdminPanel() {
           </div>
         </div>
 
-        {/* ── Meta bar ── */}
+        {/* Meta bar */}
         <div style={{ background: '#fff', borderBottom: '1.5px solid #e8d9c0', boxShadow: '0 1px 6px rgba(92,61,30,0.07)' }}>
           <div style={{ maxWidth: 1400, margin: '0 auto', padding: '10px 32px', display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
             <input
@@ -175,7 +228,7 @@ export default function AdminPanel() {
                   const datesForWeek = getDatesForWeek(d);
                   setBulletin(b => updateBulletin(b, {
                     weekLabel: label,
-                    days: b.days.map((day, i) => {
+                    days: b.days.map(day => {
                       const match = datesForWeek.find(dw => dw.day === day.day);
                       return match ? { ...day, date: match.date } : day;
                     }),
@@ -183,26 +236,19 @@ export default function AdminPanel() {
                 }}
                 style={{ fontSize: 12, padding: '5px 8px', border: '1.5px solid #e0cba8', borderRadius: 7, background: '#fdf6ec', color: '#5c3d1e', outline: 'none' }}
               />
-              {bulletin.weekLabel && <span style={{ fontSize: 12, color: '#b8860b', fontWeight: 500 }}>📅 {bulletin.weekLabel}</span>}
+              {bulletin.weekLabel && (
+                <span style={{ fontSize: 12, color: '#b8860b', fontWeight: 500 }}>📅 {bulletin.weekLabel}</span>
+              )}
             </div>
             <div style={{ flex: 1 }} />
             <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-              <button onClick={save} disabled={saving} style={{
-                padding: '8px 24px',
-                background: saving ? '#ccc' : 'linear-gradient(135deg, #b8860b, #d4a017)',
-                color: '#fff', border: 'none', borderRadius: 8,
-                fontSize: 13, fontWeight: 600, cursor: saving ? 'default' : 'pointer',
-                boxShadow: saving ? 'none' : '0 2px 10px rgba(184,134,11,0.3)',
-              }}>
+              <button onClick={save} disabled={saving} style={{ padding: '8px 24px', background: saving ? '#ccc' : 'linear-gradient(135deg, #b8860b, #d4a017)', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: saving ? 'default' : 'pointer', boxShadow: saving ? 'none' : '0 2px 10px rgba(184,134,11,0.3)' }}>
                 {saving ? 'Saving...' : 'Save'}
               </button>
-              <button onClick={publish} disabled={publishing} style={{
-                padding: '8px 24px',
-                background: publishing ? '#ccc' : 'linear-gradient(135deg, #3d2408, #5c3d1e)',
-                color: '#fff', border: 'none', borderRadius: 8,
-                fontSize: 13, fontWeight: 600, cursor: publishing ? 'default' : 'pointer',
-                boxShadow: publishing ? 'none' : '0 2px 10px rgba(61,36,8,0.25)',
-              }}>
+              <button onClick={publishAnnouncementsOnly} disabled={publishing} style={{ padding: '8px 20px', background: publishing ? '#ccc' : 'linear-gradient(135deg, #1a5276, #2980b9)', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: publishing ? 'default' : 'pointer' }}>
+                📢 Announcements
+              </button>
+              <button onClick={publish} disabled={publishing} style={{ padding: '8px 24px', background: publishing ? '#ccc' : 'linear-gradient(135deg, #3d2408, #5c3d1e)', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: publishing ? 'default' : 'pointer', boxShadow: publishing ? 'none' : '0 2px 10px rgba(61,36,8,0.25)' }}>
                 {publishing ? 'Publishing...' : '📤 Publish'}
               </button>
               {status && <span style={{ fontSize: 12, color: statusColor, fontWeight: 500 }}>{status}</span>}
@@ -210,53 +256,25 @@ export default function AdminPanel() {
           </div>
         </div>
 
-        {/* ── Main layout ── */}
+        {/* Main layout */}
         <div style={{ maxWidth: 1400, margin: '0 auto', padding: '24px 32px', display: 'grid', gridTemplateColumns: '300px 1fr', gap: 24, alignItems: 'start' }}>
-
-          {/* Left panel */}
           <div style={{ position: 'sticky', top: 24, maxHeight: 'calc(100vh - 120px)', overflowY: 'auto', scrollbarWidth: 'thin', scrollbarColor: '#e0cba8 transparent' }}>
             <div style={{ background: '#fff', borderRadius: 16, border: '1.5px solid #e8d9c0', padding: 16, boxShadow: '0 1px 8px rgba(92,61,30,0.07)' }}>
-              <PresetLibrary
-                presets={presets}
-                onAdd={p => setPresets(ps => [...ps, p])}
-                onEdit={p => setPresets(ps => ps.map(x => x.id === p.id ? p : x))}
-                onDelete={id => setPresets(ps => ps.filter(p => p.id !== id))}
-                onReorder={setPresets}
-              />
+              <PresetLibrary presets={presets} onAdd={addPreset} onEdit={editPreset} onDelete={removePreset} onReorder={reorderPresets} />
             </div>
           </div>
 
-          {/* Right panel */}
-          <div style={{ background: '#fff', borderRadius: 16, border: '1.5px solid #e8d9c0', padding: '24px 28px', boxShadow: '0 1px 8px rgba(92,61,30,0.07)' }}>
-            <div style={{ fontSize: 10, fontWeight: 700, color: '#b0956e', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 20 }}>
-              Weekly Schedule
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+            <div style={{ background: '#fff', borderRadius: 16, border: '1.5px solid #e8d9c0', padding: '24px 28px', boxShadow: '0 1px 8px rgba(92,61,30,0.07)' }}>
+              <div style={{ fontSize: 10, fontWeight: 700, color: '#b0956e', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 20 }}>Weekly Schedule</div>
+              <WeeklyView bulletin={bulletin} onUpdateBulletin={b => setBulletin(updateBulletin(b, {}))} presets={presets} />
             </div>
-            <WeeklyView
-              bulletin={bulletin}
-              onUpdateBulletin={b => setBulletin(updateBulletin(b, {}))}
-              presets={presets}
-            />
+            <div style={{ background: '#fff', borderRadius: 16, border: '1.5px solid #e8d9c0', padding: '24px 28px', boxShadow: '0 1px 8px rgba(92,61,30,0.07)' }}>
+              <ExtrasPanel bulletin={bulletin} onChange={b => setBulletin(updateBulletin(b, {}))} />
+            </div>
           </div>
         </div>
       </div>
-
-      {/* Drag overlay */}
-      <DragOverlay>
-        {activePreset && (
-          <div style={{
-            padding: '9px 14px',
-            background: '#fff8ee',
-            border: `1.5px solid ${activePreset.color}`,
-            borderLeft: `4px solid ${activePreset.color}`,
-            borderRadius: 10, fontSize: 13, fontWeight: 600, color: '#3d2408',
-            boxShadow: '0 8px 24px rgba(92,61,30,0.2)', cursor: 'grabbing',
-            display: 'flex', alignItems: 'center', gap: 8,
-          }}>
-            <div style={{ width: 8, height: 8, borderRadius: '50%', background: activePreset.color }} />
-            {activePreset.name}
-          </div>
-        )}
-      </DragOverlay>
-    </DndContext>
+    </DragProvider>
   );
 }

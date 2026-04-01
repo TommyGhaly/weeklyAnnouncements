@@ -29,6 +29,24 @@ function getWeekLabel(date = new Date()) {
   return monday.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
 }
 
+export const createAnnouncement = (text = '') => ({
+  id: crypto.randomUUID(),
+  text,
+  addedAt: new Date().toISOString(),
+});
+
+export const createMultiDayEvent = (opts = {}) => ({
+  id: crypto.randomUUID(),
+  name: opts.name ?? 'New Event',
+  startDate: opts.startDate ?? '',
+  endDate: opts.endDate ?? '',
+  time: opts.time ?? '',
+  timeTo: opts.timeTo ?? '',
+  notes: opts.notes ?? '',
+  color: opts.color ?? '#b8860b',
+  image: opts.image ?? '',
+});
+
 export const createBulletin = (presetName = 'Weekly Bulletin') => {
   const dates = getDatesForWeek();
   return {
@@ -36,6 +54,9 @@ export const createBulletin = (presetName = 'Weekly Bulletin') => {
     presetName,
     weekLabel: getWeekLabel(),
     days: DAYS.map((day, i) => ({ day, date: dates[i].date, events: [] })),
+    multiDayEvents: [],
+    announcements: [],
+    lastAnnouncementsSent: null,
     images: [],
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString(),

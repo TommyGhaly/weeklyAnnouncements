@@ -1,9 +1,10 @@
-import { useState } from 'react';
-import { useDroppable } from '@dnd-kit/core';
-import { useSortable, SortableContext, verticalListSortingStrategy } from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
+import { useState, useRef, useEffect } from 'react';
 import { TimePicker, DatePicker } from './DrumPicker';
 import ImageUpload from './ImageUpload';
+import ImagePicker from './ImagePicker';
+import { useDropZone } from '../drag/useDropZone.js';
+import { useDrag } from '../drag/useDrag.js';
+import { useDragCtx } from '../drag/DragContext.jsx';
 
 const ALL_DAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
 const prevDayName = day => ALL_DAYS[(ALL_DAYS.indexOf(day) - 1 + 7) % 7];
@@ -15,19 +16,14 @@ function EventCard({ event, dayIdx, eventIdx, onUpdate, onRemove, presets }) {
   const [expanded, setExpanded] = useState(false);
   const original = presets?.find(p => p.id === event.presetId);
   const color = event.color ?? '#b8860b';
+  const cardRef = useRef(null);
+  const { onMouseDown: onSortDrag } = useDrag('event-sort', { event, dayIdx, eventIdx });
+  const { registerSortZone } = useDragCtx();
 
-  const {
-    attributes, listeners, setNodeRef,
-    transform, transition, isDragging,
-  } = useSortable({
-    id: event.id,
-    data: { type: 'event', dayIdx, eventIdx, event },
-  });
-
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-  };
+  useEffect(() => {
+    registerSortZone(`event-${dayIdx}-${eventIdx}`, cardRef.current, { event, dayIdx, eventIdx });
+    return () => registerSortZone(`event-${dayIdx}-${eventIdx}`, null, null);
+  }, [event, dayIdx, eventIdx, registerSortZone]);
 
   const upd = (k, v) => {
     const updated = { ...event, [k]: v };
@@ -37,61 +33,40 @@ function EventCard({ event, dayIdx, eventIdx, onUpdate, onRemove, presets }) {
         updated.time !== original.defaultTime ||
         updated.timeTo !== original.defaultTimeTo ||
         updated.notes !== original.notes;
-    } else {
-      updated.modified = true;
-    }
+    } else updated.modified = true;
     onUpdate(updated);
   };
 
   const addContact = () => upd('contacts', [...(event.contacts ?? []), { name: '', phone: '' }]);
-  const updContact = (i, k, v) => {
-    const c = [...(event.contacts ?? [])]; c[i] = { ...c[i], [k]: v }; upd('contacts', c);
-  };
+  const updContact = (i, k, v) => { const c = [...(event.contacts ?? [])]; c[i] = { ...c[i], [k]: v }; upd('contacts', c); };
   const remContact = i => upd('contacts', (event.contacts ?? []).filter((_, j) => j !== i));
 
   return (
     <div
-      ref={setNodeRef}
+      ref={cardRef}
       style={{
-        ...style,
-        borderRadius: 10, overflow: 'hidden',
-        border: `1.5px solid ${expanded ? color : '#e8d9c0'}`,
-        borderLeft: `4px solid ${color}`,
-        background: isDragging ? '#fff8ee' : '#fff',
-        boxShadow: isDragging ? '0 12px 32px rgba(92,61,30,0.2)' : '0 1px 4px rgba(92,61,30,0.06)',
-        opacity: isDragging ? 0.5 : 1,
-        marginBottom: 8,
-        zIndex: isDragging ? 999 : 'auto',
-      }}
-    >
-      {/* Image — natural dimensions */}
+      borderRadius: 10, overflow: 'hidden',
+      border: `1.5px solid ${expanded ? color : '#e8d9c0'}`,
+      borderLeft: `4px solid ${color}`,
+      background: '#fff',
+      boxShadow: '0 1px 4px rgba(92,61,30,0.06)',
+      opacity: 1,
+      marginBottom: 8, userSelect: 'none',
+    }}>
       {event.image && !expanded && (
         <div style={{ width: '100%', background: '#fdf6ec', display: 'flex', justifyContent: 'center', borderBottom: '1px solid #f0e4cc' }}>
-          <img
-            src={event.image}
-            alt=""
-            style={{ maxWidth: '100%', maxHeight: 160, objectFit: 'contain', display: 'block' }}
-          />
+          <img src={event.image} alt="" style={{ maxWidth: '100%', maxHeight: 100, objectFit: 'contain', display: 'block' }} />
         </div>
       )}
 
-      {/* Header row */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '9px 10px' }}>
-        <div
-          {...listeners}
-          {...attributes}
-          style={{ color: '#d0b88a', fontSize: 15, cursor: isDragging ? 'grabbing' : 'grab', flexShrink: 0, lineHeight: 1, touchAction: 'none' }}
-        >⠿</div>
+        <div onMouseDown={e => { e.stopPropagation(); onSortDrag(e); }} style={{ color: '#d0b88a', fontSize: 15, cursor: 'grab', flexShrink: 0, lineHeight: 1 }}>⠿</div>
 
         <div style={{ flex: 1, minWidth: 0, cursor: 'pointer' }} onClick={() => setExpanded(e => !e)}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
-            <span style={{ fontSize: 13, fontWeight: event.modified ? 700 : 600, color: '#3d2408' }}>
-              {event.name}
-            </span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ fontSize: 13, fontWeight: event.modified ? 700 : 600, color: '#3d2408' }}>{event.name}</span>
             {event.modified && (
-              <span style={{ fontSize: 9, fontWeight: 700, color, background: `${color}18`, padding: '1px 5px', borderRadius: 4, textTransform: 'uppercase', letterSpacing: 0.5 }}>
-                modified
-              </span>
+              <span style={{ fontSize: 9, fontWeight: 700, color, background: `${color}18`, padding: '1px 5px', borderRadius: 4, textTransform: 'uppercase', letterSpacing: 0.5 }}>modified</span>
             )}
           </div>
           {(event.time || event.timeTo) && (
@@ -101,13 +76,10 @@ function EventCard({ event, dayIdx, eventIdx, onUpdate, onRemove, presets }) {
           )}
         </div>
 
-        <button onClick={() => setExpanded(e => !e)} style={{ background: 'none', border: 'none', color: '#c4a882', fontSize: 12, cursor: 'pointer', padding: '2px 4px' }}>
-          {expanded ? '▲' : '▼'}
-        </button>
+        <button onClick={() => setExpanded(e => !e)} style={{ background: 'none', border: 'none', color: '#c4a882', fontSize: 12, cursor: 'pointer', padding: '2px 4px' }}>{expanded ? '▲' : '▼'}</button>
         <button onClick={onRemove} style={{ background: 'none', border: 'none', color: '#c0392b', fontSize: 13, cursor: 'pointer', padding: '2px 4px' }}>✕</button>
       </div>
 
-      {/* Expanded editor */}
       {expanded && (
         <div style={{ padding: '0 12px 14px', borderTop: '1px solid #f5ede0' }}>
           <div style={{ paddingTop: 12, marginBottom: 10 }}>
@@ -124,12 +96,11 @@ function EventCard({ event, dayIdx, eventIdx, onUpdate, onRemove, presets }) {
           </div>
           <div style={{ marginBottom: 10 }}>
             <Label>Image</Label>
-            <ImageUpload value={event.image ?? ''} onChange={v => upd('image', v)} height={90} />
+            <ImagePicker value={event.image ?? ''} onChange={v => upd('image', v)} />
           </div>
           <div style={{ marginBottom: 10 }}>
             <Label>Notes</Label>
-            <textarea value={event.notes} onChange={e => upd('notes', e.target.value)} rows={2}
-              style={{ ...field, resize: 'vertical' }} placeholder="Add notes..." />
+            <textarea value={event.notes} onChange={e => upd('notes', e.target.value)} rows={2} style={{ ...field, resize: 'vertical' }} placeholder="Add notes..." />
           </div>
           <div>
             <Label>Contacts</Label>
@@ -150,7 +121,7 @@ function EventCard({ event, dayIdx, eventIdx, onUpdate, onRemove, presets }) {
 
 // ── Day drop zone ─────────────────────────────────────────────
 function DayDropZone({ dayData, dayIdx, onUpdateDay, onRemoveDay, presets }) {
-  const { isOver, setNodeRef } = useDroppable({ id: `day-${dayIdx}` });
+  const { ref, isOver } = useDropZone(`day-${dayIdx}`, { dayIdx });
 
   const updateEvent = (i, updated) => {
     const events = [...dayData.events]; events[i] = updated; onUpdateDay({ ...dayData, events });
@@ -159,7 +130,6 @@ function DayDropZone({ dayData, dayIdx, onUpdateDay, onRemoveDay, presets }) {
 
   return (
     <div style={{ marginBottom: 4 }}>
-      {/* Day header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
         <span style={{ fontSize: 14, fontWeight: 700, color: '#5c3d1e', minWidth: 80 }}>{dayData.day}</span>
         <DatePicker value={dayData.date ?? ''} onChange={v => onUpdateDay({ ...dayData, date: v })} />
@@ -167,15 +137,14 @@ function DayDropZone({ dayData, dayIdx, onUpdateDay, onRemoveDay, presets }) {
         <button onClick={onRemoveDay} title="Remove day" style={{ background: 'none', border: 'none', color: '#d0b88a', fontSize: 12, cursor: 'pointer', padding: '2px 4px' }}>✕</button>
       </div>
 
-      {/* Sortable drop zone */}
       <div
-        ref={setNodeRef}
+        ref={ref}
         style={{
-          minHeight: 52, borderRadius: 10,
+          minHeight: 56, borderRadius: 10,
           border: `1.5px dashed ${isOver ? '#b8860b' : '#e8d9c0'}`,
           background: isOver ? '#fffbf0' : 'transparent',
           padding: dayData.events.length > 0 ? '8px 8px 2px' : 0,
-          transition: 'all 0.15s',
+          transition: 'border-color 0.15s, background 0.15s',
         }}
       >
         {dayData.events.length === 0 && (
@@ -183,22 +152,17 @@ function DayDropZone({ dayData, dayIdx, onUpdateDay, onRemoveDay, presets }) {
             {isOver ? '↓ Drop here' : 'Drag events here'}
           </div>
         )}
-        <SortableContext
-          items={dayData.events.map(e => e.id)}
-          strategy={verticalListSortingStrategy}
-        >
-          {dayData.events.map((event, i) => (
-            <EventCard
-              key={event.id}
-              event={event}
-              dayIdx={dayIdx}
-              eventIdx={i}
-              onUpdate={updated => updateEvent(i, updated)}
-              onRemove={() => removeEvent(i)}
-              presets={presets}
-            />
-          ))}
-        </SortableContext>
+        {dayData.events.map((event, i) => (
+          <EventCard
+            key={event.id}
+            event={event}
+            dayIdx={dayIdx}
+            eventIdx={i}
+            onUpdate={updated => updateEvent(i, updated)}
+            onRemove={() => removeEvent(i)}
+            presets={presets}
+          />
+        ))}
       </div>
     </div>
   );
@@ -208,16 +172,10 @@ function DayDropZone({ dayData, dayIdx, onUpdateDay, onRemoveDay, presets }) {
 function InsertBtn({ label, onClick }) {
   const [hovered, setHovered] = useState(false);
   return (
-    <div
-      onClick={onClick}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '4px 0', cursor: 'pointer', opacity: hovered ? 1 : 0, transition: 'opacity 0.15s' }}
-    >
+    <div onClick={onClick} onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)}
+      style={{ display: 'flex', alignItems: 'center', gap: 8, margin: '4px 0', cursor: 'pointer', opacity: hovered ? 1 : 0, transition: 'opacity 0.15s' }}>
       <div style={{ flex: 1, height: 1, background: '#e0cba8' }} />
-      <span style={{ fontSize: 11, color: '#b8860b', fontWeight: 600, whiteSpace: 'nowrap', padding: '2px 10px', background: '#fff8ee', borderRadius: 10, border: '1px solid #e8d5a8' }}>
-        {label}
-      </span>
+      <span style={{ fontSize: 11, color: '#b8860b', fontWeight: 600, whiteSpace: 'nowrap', padding: '2px 10px', background: '#fff8ee', borderRadius: 10, border: '1px solid #e8d5a8' }}>{label}</span>
       <div style={{ flex: 1, height: 1, background: '#e0cba8' }} />
     </div>
   );
@@ -241,23 +199,18 @@ export default function WeeklyView({ bulletin, onUpdateBulletin, presets }) {
 
   return (
     <div>
+      {bulletin.days.length > 0 && (
+        <InsertBtn label={`+ ${prevDayName(bulletin.days[0].day)}`} onClick={() => insertDay(0, 'before')} />
+      )}
       {bulletin.days.map((day, i) => (
-        <div key={`${day.day}-${i}`}>
-          <InsertBtn label={`+ ${prevDayName(day.day)}`} onClick={() => insertDay(i, 'before')} />
-          <DayDropZone
-            dayData={day}
-            dayIdx={i}
-            onUpdateDay={updated => updateDay(i, updated)}
-            onRemoveDay={() => removeDay(i)}
-            presets={presets}
-          />
-        </div>
+        <DayDropZone key={`${day.day}-${i}`} dayData={day} dayIdx={i}
+          onUpdateDay={updated => updateDay(i, updated)}
+          onRemoveDay={() => removeDay(i)}
+          presets={presets}
+        />
       ))}
       {bulletin.days.length > 0 && (
-        <InsertBtn
-          label={`+ ${nextDayName(bulletin.days[bulletin.days.length - 1].day)}`}
-          onClick={() => insertDay(bulletin.days.length - 1, 'after')}
-        />
+        <InsertBtn label={`+ ${nextDayName(bulletin.days[bulletin.days.length - 1].day)}`} onClick={() => insertDay(bulletin.days.length - 1, 'after')} />
       )}
     </div>
   );

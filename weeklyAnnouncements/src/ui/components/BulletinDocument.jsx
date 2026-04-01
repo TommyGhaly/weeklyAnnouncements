@@ -55,7 +55,7 @@ export const BulletinDocument = ({ bulletin }) => (
                 <View key={j}>
                   <View style={s.eventRow}>
                     <Text style={s.eventTime}>
-                      {event.time}{event.timeTo ? ` → ${event.timeTo}` : ''}
+                      {event.time}{event.timeTo ? ` - ${event.timeTo}` : ''}
                     </Text>
                     <Text style={s.eventName}>{event.name}</Text>
                   </View>
