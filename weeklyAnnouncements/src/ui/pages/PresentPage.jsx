@@ -23,6 +23,12 @@ const slideAccent = {
   event: '#a87fd4',
 };
 
+function buildSlides(bulletin) {
+  return (bulletin.days ?? [])
+    .filter(d => d.events?.length > 0)
+    .map(d => ({ type: 'day', data: d }));
+}
+
 export default function PresentPage() {
   const [bulletins, setBulletins] = useState([]);
   const [selected, setSelected] = useState(null);
@@ -43,7 +49,8 @@ export default function PresentPage() {
     });
   }, []);
 
-  const total = selected?.slides.length ?? 0;
+  const slides = selected ? buildSlides(selected) : [];
+  const total = slides.length;
 
   const goTo = useCallback(i => {
     setTransitioning(true);
@@ -55,7 +62,7 @@ export default function PresentPage() {
 
   useEffect(() => {
     if (!selected || paused || total === 0) return;
-    const slide = selected.slides[index];
+    const slide = slides[index];
     const duration = slideDuration(slide);
     setProgress(0);
     startRef.current = Date.now();
@@ -79,14 +86,23 @@ export default function PresentPage() {
     return () => window.removeEventListener('keydown', h);
   }, [next, prev]);
 
-  const enterFullscreen = () => {
-    const el = containerRef.current;
-    if (!el) return;
-    if (el.requestFullscreen) el.requestFullscreen();
-    else if (el.webkitRequestFullscreen) el.webkitRequestFullscreen();
+  const [isFullscreen, setIsFullscreen] = useState(false);
+
+  useEffect(() => {
+    const h = () => setIsFullscreen(!!document.fullscreenElement);
+    document.addEventListener('fullscreenchange', h);
+    return () => document.removeEventListener('fullscreenchange', h);
+  }, []);
+
+  const toggleFullscreen = () => {
+    if (!document.fullscreenElement) {
+      containerRef.current?.requestFullscreen();
+    } else {
+      document.exitFullscreen();
+    }
   };
 
-  const slide = selected?.slides[index];
+  const slide = slides[index];
   const accent = slide ? (slideAccent[slide.type] ?? '#d4a017') : '#d4a017';
 
   return (
@@ -129,11 +145,11 @@ export default function PresentPage() {
               padding: '4px 12px', borderRadius: 6, border: '1px solid #2a2010',
               background: 'transparent', color: '#3d3020', fontSize: 11, cursor: 'pointer',
             }}>{paused ? '▶ Resume' : '⏸ Pause'}</button>
-            <button onClick={enterFullscreen} style={{
+            <button onClick={toggleFullscreen} style={{
               padding: '4px 14px', borderRadius: 6,
               border: '1px solid #d4a01744',
               background: '#2a1f0a', color: '#d4a017', fontSize: 11, cursor: 'pointer',
-            }}>⛶ Fullscreen</button>
+            }}>            {isFullscreen ? '⊠ Exit fullscreen' : '⛶ Fullscreen'}</button>
             <a href="/admin" style={{ color: '#2a2010', fontSize: 11, textDecoration: 'none' }}>Admin</a>
           </div>
         </div>
@@ -145,7 +161,8 @@ export default function PresentPage() {
         style={{
           flex: 1, display: 'flex', flexDirection: 'column',
           alignItems: 'center', justifyContent: 'center',
-          padding: '40px 80px', cursor: 'pointer', position: 'relative',
+          padding: '32px 80px', cursor: 'pointer', position: 'relative',
+          overflow: 'hidden',
           opacity: transitioning ? 0 : 1,
           transform: transitioning ? 'translateY(10px)' : 'translateY(0)',
           transition: 'opacity 0.3s ease, transform 0.3s ease',
@@ -186,7 +203,7 @@ export default function PresentPage() {
         }}>
           <NavBtn onClick={prev} disabled={index === 0}>←</NavBtn>
           <div style={{ display: 'flex', gap: 5, alignItems: 'center' }}>
-            {selected?.slides.map((s, i) => (
+            {slides.map((s, i) => (
               <div key={i} onClick={e => { e.stopPropagation(); goTo(i); }} style={{
                 width: i === index ? 24 : 6, height: 6, borderRadius: 3,
                 background: i === index ? accent : '#2a2010',
@@ -202,88 +219,133 @@ export default function PresentPage() {
 }
 
 function SlideDisplay({ slide, accent }) {
-  const titleStyle = {
-    fontFamily: 'Playfair Display, serif',
-    fontSize: 'clamp(28px, 5vw, 52px)',
-    color: accent,
-    marginBottom: 36,
-    letterSpacing: 0.5,
-  };
+  const { data } = slide;
+  const events = data.events ?? [];
+  const dateLabel = data.date
+    ? new Date(data.date + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })
+    : null;
 
-  const divider = (
-    <div style={{ width: 60, height: 2, background: `linear-gradient(to right, transparent, ${accent}, transparent)`, margin: '0 auto 36px' }} />
-  );
+  return (
+    <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column' }}>
 
-  if (slide.type === 'day') return (
-    <div style={{ textAlign: 'center', maxWidth: 900, width: '100%' }}>
-      <h2 style={titleStyle}>{slide.data.day}</h2>
-      {divider}
-      {slide.data.items?.map((item, i) => (
-        <div key={i} style={{ marginBottom: 28 }}>
-          <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'baseline', gap: 24 }}>
-            <span style={{
-              color: accent, fontSize: 'clamp(14px, 2vw, 20px)',
-              fontWeight: 600, minWidth: 140, textAlign: 'right', opacity: 0.85,
-            }}>{item.time}</span>
-            <span style={{ color: '#e8dcc8', fontSize: 'clamp(18px, 3vw, 30px)', fontWeight: 400 }}>{item.label}</span>
+      {/* ── Header band ── */}
+      <div style={{
+        padding: '28px 56px 24px',
+        borderBottom: `1px solid ${accent}30`,
+        display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between',
+        flexShrink: 0,
+      }}>
+        <div>
+          <div style={{
+            fontSize: 'clamp(48px, 8vw, 96px)',
+            fontFamily: 'Playfair Display, serif',
+            fontWeight: 600, color: accent,
+            lineHeight: 1, letterSpacing: -1,
+          }}>
+            {data.day}
           </div>
-          {item.note && (
-            <div style={{ color: '#4a3e28', fontSize: 'clamp(12px, 1.5vw, 16px)', marginTop: 6 }}>{item.note}</div>
+          {dateLabel && (
+            <div style={{ fontSize: 'clamp(14px, 1.8vw, 22px)', color: '#4a3e28', marginTop: 6, letterSpacing: 2, textTransform: 'uppercase' }}>
+              {dateLabel}
+            </div>
           )}
         </div>
-      ))}
-    </div>
-  );
+        <div style={{ fontSize: 'clamp(32px, 5vw, 64px)', color: `${accent}22`, fontFamily: 'Playfair Display, serif', lineHeight: 1 }}>✝</div>
+      </div>
 
-  if (slide.type === 'announcement') return (
-    <div style={{ textAlign: 'center', maxWidth: 860, width: '100%' }}>
-      <h2 style={titleStyle}>{slide.data.title}</h2>
-      {divider}
-      {slide.data.items?.map((item, i) => (
-        <div key={i} style={{
-          display: 'flex', alignItems: 'flex-start', gap: 16,
-          marginBottom: 20, textAlign: 'left', justifyContent: 'center',
-        }}>
-          <span style={{ color: accent, fontSize: 20, marginTop: 4, flexShrink: 0 }}>•</span>
-          <span style={{ color: '#d4c4a8', fontSize: 'clamp(16px, 2.5vw, 26px)', lineHeight: 1.6 }}>{item}</span>
-        </div>
-      ))}
-    </div>
-  );
+      {/* ── Event cards ── */}
+      <div style={{
+        flex: 1,
+        padding: '24px 40px',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: 12,
+        justifyContent: events.length <= 2 ? 'center' : 'space-evenly',
+        overflow: 'hidden',
+      }}>
+        {events.map((event, i) => {
+          const color = event.color ?? accent;
+          const hasImage = !!event.image;
+          return (
+            <div key={i} style={{
+              display: 'flex',
+              alignItems: 'stretch',
+              gap: 0,
+              background: 'rgba(255,255,255,0.03)',
+              border: `1px solid rgba(255,255,255,0.06)`,
+              borderLeft: `4px solid ${color}`,
+              borderRadius: 12,
+              overflow: 'hidden',
+              minHeight: events.length <= 2 ? 120 : events.length <= 4 ? 90 : 70,
+              flex: 1,
+              maxHeight: events.length <= 2 ? 200 : 'none',
+            }}>
+              {/* Image panel */}
+              {hasImage && (
+                <div style={{
+                  width: 'clamp(100px, 12vw, 180px)',
+                  flexShrink: 0,
+                  background: `url(${event.image}) center/cover no-repeat`,
+                  opacity: 0.85,
+                }} />
+              )}
 
-  if (slide.type === 'contact') return (
-    <div style={{ textAlign: 'center', maxWidth: 860, width: '100%' }}>
-      <h2 style={titleStyle}>{slide.data.title}</h2>
-      {divider}
-      {slide.data.entries?.map((e, i) => (
-        <div key={i} style={{
-          display: 'flex', justifyContent: 'center', alignItems: 'center',
-          gap: 20, marginBottom: 24,
-          padding: '16px 32px',
-          background: 'rgba(255,255,255,0.02)',
-          border: '1px solid rgba(255,255,255,0.04)',
-          borderRadius: 12,
-          maxWidth: 600, margin: '0 auto 16px',
-        }}>
-          {e.role && <span style={{ color: '#4a3e28', fontSize: 14, minWidth: 120, textAlign: 'right' }}>{e.role}</span>}
-          <span style={{ color: '#e8dcc8', fontSize: 'clamp(16px, 2.5vw, 24px)', fontWeight: 500 }}>{e.name}</span>
-          {e.phone && <span style={{ color: accent, fontSize: 18, fontWeight: 600 }}>{e.phone}</span>}
-        </div>
-      ))}
-    </div>
-  );
+              {/* Content */}
+              <div style={{ flex: 1, padding: 'clamp(12px, 2vw, 24px)', display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 6 }}>
+                <div style={{
+                  fontSize: 'clamp(18px, 3vw, 40px)',
+                  fontFamily: 'Playfair Display, serif',
+                  fontWeight: 600, color: '#f0e4cc',
+                  lineHeight: 1.1,
+                }}>
+                  {event.name}
+                </div>
+                {event.notes && (
+                  <div style={{ fontSize: 'clamp(12px, 1.4vw, 18px)', color: '#4a3e28', lineHeight: 1.4 }}>
+                    {event.notes}
+                  </div>
+                )}
+                {(event.contacts ?? []).length > 0 && (
+                  <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginTop: 2 }}>
+                    {event.contacts.map((c, j) => (
+                      <span key={j} style={{ fontSize: 'clamp(11px, 1.2vw, 16px)', color: '#5a4a30' }}>
+                        {c.name}{c.phone && <span style={{ color, marginLeft: 6 }}>{c.phone}</span>}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
 
-  if (slide.type === 'event') return (
-    <div style={{ textAlign: 'center', maxWidth: 760, width: '100%' }}>
-      <h2 style={{ ...titleStyle, fontSize: 'clamp(30px, 6vw, 58px)' }}>{slide.data.title}</h2>
-      {divider}
-      {slide.data.subtitle && <p style={{ color: '#8a7a5a', fontSize: 'clamp(16px, 2.5vw, 26px)', marginBottom: 20 }}>{slide.data.subtitle}</p>}
-      {slide.data.time && (
-        <p style={{ color: accent, fontSize: 'clamp(18px, 3vw, 30px)', marginBottom: 16, fontWeight: 600 }}>
-          🕐 {slide.data.time}
-        </p>
-      )}
-      {slide.data.note && <p style={{ color: '#4a3e28', fontSize: 'clamp(13px, 1.8vw, 20px)', marginTop: 12 }}>{slide.data.note}</p>}
+              {/* Time — right side */}
+              {(event.time || event.timeTo) && (
+                <div style={{
+                  padding: 'clamp(12px, 2vw, 24px)',
+                  display: 'flex', flexDirection: 'column', alignItems: 'flex-end', justifyContent: 'center',
+                  gap: 4, flexShrink: 0, minWidth: 'clamp(100px, 14vw, 200px)',
+                  borderLeft: `1px solid rgba(255,255,255,0.05)`,
+                }}>
+                  {event.time && (
+                    <div style={{ fontSize: 'clamp(14px, 2vw, 26px)', fontWeight: 700, color, lineHeight: 1 }}>
+                      {event.time}
+                    </div>
+                  )}
+                  {event.timeTo && (
+                    <>
+                      <div style={{ fontSize: 10, color: '#3a2e1a' }}>→</div>
+                      <div style={{ fontSize: 'clamp(13px, 1.8vw, 22px)', fontWeight: 600, color: `${color}bb`, lineHeight: 1 }}>
+                        {event.timeTo}
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* ── Footer rule ── */}
+      <div style={{ height: 1, background: `linear-gradient(to right, transparent, ${accent}33, transparent)`, margin: '0 40px 16px', flexShrink: 0 }} />
     </div>
   );
 }

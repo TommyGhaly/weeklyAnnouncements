@@ -1,11 +1,15 @@
 export const CHURCH_NAME = 'St. Philopater Mercurius & St. Mina';
 
-export const createBulletin = (presetName = 'Weekly Bulletin', slides = []) => ({
+export const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+
+export const createBulletin = (presetName = 'Weekly Bulletin') => ({
   id: crypto.randomUUID(),
   presetName,
-  slides,
-  images: [], // array of { url, caption }
   weekLabel: getWeekLabel(),
+  days: DAYS.map(day => ({ day, date: '', events: [] })),
+  announcements: [],
+  contacts: [],
+  images: [],
   createdAt: new Date().toISOString(),
   updatedAt: new Date().toISOString(),
 });
@@ -15,6 +19,38 @@ export const updateBulletin = (bulletin, changes) => ({
   ...changes,
   updatedAt: new Date().toISOString(),
 });
+
+export const createPreset = (name, opts = {}) => ({
+  id: crypto.randomUUID(),
+  name,
+  color: opts.color ?? '#b8860b',
+  defaultTime: opts.defaultTime ?? '',
+  defaultTimeTo: opts.defaultTimeTo ?? '',
+  contacts: opts.contacts ?? [],
+  notes: opts.notes ?? '',
+  image: opts.image ?? '',
+});
+
+export const createEvent = (preset = null, overrides = {}) => ({
+  id: crypto.randomUUID(),
+  presetId: preset?.id ?? null,
+  name: overrides.name ?? preset?.name ?? 'New Event',
+  time: overrides.time ?? preset?.defaultTime ?? '',
+  timeTo: overrides.timeTo ?? preset?.defaultTimeTo ?? '',
+  contacts: overrides.contacts ?? (preset?.contacts ? [...preset.contacts] : []),
+  notes: overrides.notes ?? preset?.notes ?? '',
+  image: overrides.image ?? preset?.image ?? '',
+  modified: false,
+  color: overrides.color ?? preset?.color ?? '#b8860b',
+});
+
+export const DEFAULT_PRESETS = [
+  createPreset('Divine Liturgy', { color: '#7a5230', defaultTime: '10:00am', defaultTimeTo: '1:00pm' }),
+  createPreset('Matins', { color: '#4a7c59', defaultTime: '8:00am', defaultTimeTo: '9:30am' }),
+  createPreset('Bible Study', { color: '#1a5276', defaultTime: '7:00pm', defaultTimeTo: '9:00pm' }),
+  createPreset('Youth Meeting', { color: '#6d3b8e', defaultTime: '6:00pm', defaultTimeTo: '8:00pm' }),
+  createPreset('Vespers', { color: '#8b4513', defaultTime: '6:00pm', defaultTimeTo: '7:30pm' }),
+];
 
 function getWeekLabel() {
   const now = new Date();

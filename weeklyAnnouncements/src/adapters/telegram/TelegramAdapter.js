@@ -42,41 +42,39 @@ export class TelegramAdapter extends NotificationPort {
   formatDigest(bulletin) {
     const lines = [
       `✝ *${CHURCH_NAME}*`,
-      `📋 *${bulletin.presetName}* — ${bulletin.weekLabel}`,
-      '',
+      ``,
+      `📋 *${bulletin.presetName}*`,
+      `🗓 Week of ${bulletin.weekLabel}`,
+      ``,
+      `━━━━━━━━━━━━━━━━━━━━`,
+      ``,
     ];
 
-    for (const slide of bulletin.slides) {
-      switch (slide.type) {
-        case 'day':
-          lines.push(`*${slide.data.day}*`);
-          slide.data.items?.forEach(i => {
-            const time = i.time ? `${i.time} ` : '';
-            const note = i.note ? ` _(${i.note})_` : '';
-            lines.push(`  ${time}${i.label}${note}`);
-          });
-          lines.push('');
-          break;
-        case 'announcement':
-          lines.push(`📢 *${slide.data.title}*`);
-          slide.data.items?.forEach(i => lines.push(`  • ${i}`));
-          lines.push('');
-          break;
-        case 'contact':
-          lines.push(`📞 *${slide.data.title}*`);
-          slide.data.entries?.forEach(e => {
-            lines.push(`  ${e.role ? `_${e.role}_: ` : ''}${e.name} ${e.phone ? `— ${e.phone}` : ''}`);
-          });
-          lines.push('');
-          break;
-        case 'event':
-          lines.push(`🗓 *${slide.data.title}*`);
-          if (slide.data.subtitle) lines.push(`  ${slide.data.subtitle}`);
-          if (slide.data.time) lines.push(`  🕐 ${slide.data.time}`);
-          if (slide.data.note) lines.push(`  ${slide.data.note}`);
-          lines.push('');
-          break;
+    for (const day of bulletin.days ?? []) {
+      if (!day.events?.length) continue;
+
+      const dateLabel = day.date
+        ? new Date(day.date + 'T00:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric' })
+        : '';
+
+      lines.push(`📅 *${day.day}${dateLabel ? ` — ${dateLabel}` : ''}*`);
+      lines.push(``);
+
+      for (const e of day.events) {
+        const time = e.time
+          ? `🕐 ${e.time}${e.timeTo ? ` → ${e.timeTo}` : ''}`
+          : '';
+        lines.push(`   *${e.name}*`);
+        if (time) lines.push(`   ${time}`);
+        if (e.notes) lines.push(`   _${e.notes}_`);
+        for (const c of e.contacts ?? []) {
+          lines.push(`   📞 ${c.name}${c.phone ? ` · ${c.phone}` : ''}`);
+        }
+        lines.push(``);
       }
+
+      lines.push(`━━━━━━━━━━━━━━━━━━━━`);
+      lines.push(``);
     }
 
     return lines.join('\n');

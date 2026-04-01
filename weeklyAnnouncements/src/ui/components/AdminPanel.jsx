@@ -1,53 +1,22 @@
 import { useState, useEffect } from 'react';
+import { DndContext, DragOverlay, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
+import { arrayMove } from '@dnd-kit/sortable';
 import { FirebaseBulletinRepo } from '../../adapters/firebase/FirebaseBulletinRepo';
 import { ReactPDFExporter } from '../../adapters/export/ReactPDFExporter.jsx';
 import { TelegramAdapter } from '../../adapters/telegram/TelegramAdapter';
-import { createBulletin, updateBulletin, CHURCH_NAME } from '../../core/domain/Bulletin';
-import { createSlide, SlideType, DAYS, defaultSlideData } from '../../core/domain/Slide';
-import SlideEditor from './SlideEditor';
+import { createBulletin, updateBulletin, createEvent, DEFAULT_PRESETS, CHURCH_NAME } from '../../core/domain/Bulletin';
+import PresetLibrary from './PresetLibrary';
+import WeeklyView from './WeeklyView';
 
 const repo = new FirebaseBulletinRepo();
 const exporter = new ReactPDFExporter();
 const telegram = new TelegramAdapter();
+const PRESETS_KEY = 'wa_presets';
 
-const slideTypeLabels = {
-  [SlideType.DAY]: '📅 Day',
-  [SlideType.ANNOUNCEMENT]: '📢 Announcement',
-  [SlideType.CONTACT]: '📞 Contacts',
-  [SlideType.EVENT]: '🗓 Event',
-};
-
-const css = `
-  @import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600&family=Inter:wght@400;500;600&display=swap');
-
-  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
-  body {
-    font-family: 'Inter', sans-serif;
-    background: #f7f0e6;
-    color: #2c1a0e;
-    min-height: 100vh;
-  }
-
-  input, textarea, select {
-    font-family: 'Inter', sans-serif;
-    font-size: 14px;
-    padding: 9px 13px;
-    border: 1.5px solid #e0cba8;
-    border-radius: 8px;
-    background: #fff;
-    color: #2c1a0e;
-    outline: none;
-    width: 100%;
-    transition: border-color 0.2s, box-shadow 0.2s;
-  }
-  input:focus, textarea:focus, select:focus {
-    border-color: #b8860b;
-    box-shadow: 0 0 0 3px rgba(184,134,11,0.12);
-  }
-  textarea { resize: vertical; }
-  button { font-family: 'Inter', sans-serif; cursor: pointer; }
-`;
+function loadPresets() {
+  try { return JSON.parse(localStorage.getItem(PRESETS_KEY)) ?? DEFAULT_PRESETS; }
+  catch { return DEFAULT_PRESETS; }
+}
 
 function toInputDate(weekLabel) {
   try {
@@ -59,57 +28,90 @@ function toInputDate(weekLabel) {
 
 export default function AdminPanel() {
   const [bulletin, setBulletin] = useState(createBulletin('Weekly Bulletin'));
-  const [presets, setPresets] = useState([]);
+  const [savedBulletins, setSavedBulletins] = useState([]);
+  const [presets, setPresets] = useState(loadPresets);
+  const [active, setActive] = useState(null);
   const [status, setStatus] = useState('');
   const [statusType, setStatusType] = useState('info');
   const [publishing, setPublishing] = useState(false);
-  const [selectedDay, setSelectedDay] = useState(DAYS[0]);
+  const [saving, setSaving] = useState(false);
 
-  useEffect(() => { repo.listPresets().then(setPresets); }, []);
+  const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
+
+  useEffect(() => { repo.listPresets().then(setSavedBulletins); }, []);
+  useEffect(() => { localStorage.setItem(PRESETS_KEY, JSON.stringify(presets)); }, [presets]);
 
   const setMsg = (msg, type = 'info') => {
     setStatus(msg); setStatusType(type);
     setTimeout(() => setStatus(''), 3500);
   };
 
-  const addSlide = type => {
-    const data = type === SlideType.DAY ? defaultSlideData[type](selectedDay) : defaultSlideData[type]();
-    setBulletin(b => updateBulletin(b, { slides: [...b.slides, createSlide(type, data)] }));
-  };
+  const handleDragStart = ({ active }) => setActive(active);
 
-  const updateSlide = (id, data) =>
-    setBulletin(b => updateBulletin(b, { slides: b.slides.map(s => s.id === id ? { ...s, data } : s) }));
-  const removeSlide = id =>
-    setBulletin(b => updateBulletin(b, { slides: b.slides.filter(s => s.id !== id) }));
-  const moveSlide = (i, dir) => {
-    const slides = [...bulletin.slides];
-    const j = i + dir;
-    if (j < 0 || j >= slides.length) return;
-    [slides[i], slides[j]] = [slides[j], slides[i]];
-    setBulletin(b => updateBulletin(b, { slides }));
-  };
+  const handleDragEnd = ({ active, over }) => {
+    setActive(null);
+    if (!over) return;
 
-  const addImage = () =>
-    setBulletin(b => updateBulletin(b, { images: [...(b.images ?? []), { url: '', caption: '' }] }));
-  const updateImage = (i, field, val) => {
-    const images = [...(bulletin.images ?? [])];
-    images[i] = { ...images[i], [field]: val };
-    setBulletin(b => updateBulletin(b, { images }));
+    const activeData = active.data.current;
+
+    // Within-day reorder (sortable)
+    if (activeData?.type === 'event') {
+      const { dayIdx } = activeData;
+      const days = [...bulletin.days];
+      const day = days[dayIdx];
+      const ids = day.events.map(e => e.id);
+      const oldIdx = ids.indexOf(active.id);
+      const newIdx = ids.indexOf(over.id);
+
+      // Same day reorder
+      if (oldIdx !== -1 && newIdx !== -1 && oldIdx !== newIdx) {
+        days[dayIdx] = { ...day, events: arrayMove(day.events, oldIdx, newIdx) };
+        setBulletin(b => updateBulletin(b, { days }));
+        return;
+      }
+
+      // Move to different day
+      const overMatch = over.id.toString().match(/^day-(\d+)$/);
+      if (overMatch) {
+        const toDayIdx = parseInt(overMatch[1]);
+        if (toDayIdx === dayIdx) return;
+        const eventIdx = activeData.eventIdx;
+        days[dayIdx] = { ...days[dayIdx], events: days[dayIdx].events.filter((_, i) => i !== eventIdx) };
+        days[toDayIdx] = { ...days[toDayIdx], events: [...days[toDayIdx].events, activeData.event] };
+        setBulletin(b => updateBulletin(b, { days }));
+      }
+      return;
+    }
+
+    // Drop preset or one-time onto a day
+    const overMatch = over.id.toString().match(/^day-(\d+)$/);
+    if (!overMatch) return;
+    const dayIdx = parseInt(overMatch[1]);
+
+    let newEvent;
+    if (activeData?.type === 'preset') newEvent = createEvent(activeData.preset);
+    else if (activeData?.type === 'one-time') newEvent = createEvent(null, { name: 'New Event' });
+    if (!newEvent) return;
+
+    const days = [...bulletin.days];
+    days[dayIdx] = { ...days[dayIdx], events: [...days[dayIdx].events, newEvent] };
+    setBulletin(b => updateBulletin(b, { days }));
   };
-  const removeImage = i =>
-    setBulletin(b => updateBulletin(b, { images: (b.images ?? []).filter((_, j) => j !== i) }));
 
   const save = async () => {
+    setSaving(true);
     await repo.save(bulletin);
-    setPresets(await repo.listPresets());
-    setMsg('Preset saved!', 'success');
+    setSavedBulletins(await repo.listPresets());
+    setMsg('Saved!', 'success');
+    setSaving(false);
   };
 
-  const loadPreset = p => { setBulletin(p); setMsg(`Loaded: ${p.presetName}`, 'info'); };
-  const deletePreset = async (e, id) => {
+  const load = b => { setBulletin(b); setMsg(`Loaded: ${b.presetName}`, 'info'); };
+
+  const deleteSaved = async (e, id) => {
     e.stopPropagation();
     await repo.delete(id);
-    setPresets(p => p.filter(x => x.id !== id));
+    setSavedBulletins(s => s.filter(x => x.id !== id));
   };
 
   const publish = async () => {
@@ -120,222 +122,133 @@ export default function AdminPanel() {
       setMsg('Publishing to Telegram...', 'info');
       await telegram.publish(bulletin, blob);
       setMsg('Published!', 'success');
-    } catch (e) {
-      setMsg(`Error: ${e.message}`, 'error');
-    }
+    } catch (e) { setMsg(`Error: ${e.message}`, 'error'); }
     setPublishing(false);
   };
 
   const statusColor = { success: '#27ae60', error: '#c0392b', info: '#7a6352' }[statusType];
+  const activePreset = active?.data.current?.type === 'preset' ? active.data.current.preset : null;
 
   return (
-    <>
-      <style>{css}</style>
-      <div style={{ minHeight: '100vh', background: '#f7f0e6' }}>
+    <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
+      <div style={{ minHeight: '100vh', background: '#f4ece0', fontFamily: 'Inter, sans-serif' }}>
 
-        {/* Header */}
-        <div style={{
-          background: 'linear-gradient(135deg, #3d2408 0%, #5c3d1e 100%)',
-          padding: '0 0 0 0',
-          boxShadow: '0 2px 20px rgba(92,61,30,0.25)',
-        }}>
-          <div style={{ maxWidth: 860, margin: '0 auto', padding: '22px 32px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-              <div style={{
-                width: 44, height: 44, borderRadius: '50%',
-                background: 'rgba(212,160,23,0.15)',
-                border: '1.5px solid rgba(212,160,23,0.4)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: 20, color: '#d4a017',
-              }}>✝</div>
-              <div>
-                <div style={{ color: 'rgba(255,255,255,0.5)', fontSize: 10, letterSpacing: 2, textTransform: 'uppercase', marginBottom: 2 }}>{CHURCH_NAME}</div>
-                <div style={{ color: '#fff', fontSize: 18, fontFamily: 'Playfair Display, serif', fontWeight: 600 }}>Weekly Announcements</div>
-              </div>
+        {/* ── Header ── */}
+        <div style={{ background: 'linear-gradient(135deg, #2e1a08 0%, #5c3d1e 100%)', boxShadow: '0 2px 24px rgba(46,26,8,0.3)' }}>
+          <div style={{ maxWidth: 1400, margin: '0 auto', padding: '16px 32px', display: 'flex', alignItems: 'center', gap: 16 }}>
+            <div style={{ width: 38, height: 38, borderRadius: '50%', background: 'rgba(212,160,23,0.15)', border: '1.5px solid rgba(212,160,23,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, color: '#d4a017', flexShrink: 0 }}>✝</div>
+            <div>
+              <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: 10, letterSpacing: 2, textTransform: 'uppercase' }}>{CHURCH_NAME}</div>
+              <div style={{ color: '#fff', fontSize: 16, fontFamily: 'Playfair Display, serif', fontWeight: 600 }}>Weekly Announcements</div>
             </div>
-            <a href="/" style={{
-              color: 'rgba(255,255,255,0.5)', fontSize: 12, textDecoration: 'none',
-              padding: '6px 14px', border: '1px solid rgba(255,255,255,0.15)',
-              borderRadius: 6, transition: 'all 0.2s',
-            }}>Present mode →</a>
-          </div>
-        </div>
-
-        <div style={{ maxWidth: 860, margin: '0 auto', padding: '36px 32px' }}>
-
-          {/* Two-column top row */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginBottom: 28 }}>
-
-            {/* Bulletin name card */}
-            <Card title="Bulletin Name">
-              <input
-                value={bulletin.presetName}
-                onChange={e => setBulletin(b => updateBulletin(b, { presetName: e.target.value }))}
-                style={{ fontSize: 17, fontFamily: 'Playfair Display, serif', fontWeight: 600, marginBottom: 12 }}
-              />
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <label style={{ fontSize: 12, color: '#7a6352', whiteSpace: 'nowrap' }}>Week of</label>
-                <input
-                  type="date"
-                  value={toInputDate(bulletin.weekLabel)}
-                  onChange={e => {
-                    const d = new Date(e.target.value + 'T00:00:00');
-                    const label = d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
-                    setBulletin(b => updateBulletin(b, { weekLabel: label }));
-                  }}
-                  style={{ fontSize: 13 }}
-                />
-              </div>
-              {bulletin.weekLabel && (
-                <div style={{ marginTop: 8, fontSize: 12, color: '#b8860b', fontWeight: 500 }}>📅 {bulletin.weekLabel}</div>
-              )}
-            </Card>
-
-            {/* Presets card */}
-            <Card title="Saved Presets">
-              {presets.length === 0
-                ? <div style={{ color: '#b0956e', fontSize: 13, padding: '12px 0' }}>No presets yet — save one below.</div>
-                : <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                    {presets.map(p => (
-                      <div key={p.id} style={{
-                        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                        padding: '8px 12px', background: '#fdf6ec',
-                        border: '1.5px solid #e0cba8', borderRadius: 8,
-                      }}>
-                        <button onClick={() => loadPreset(p)} style={{
-                          background: 'none', border: 'none', color: '#5c3d1e',
-                          fontSize: 13, fontWeight: 500, cursor: 'pointer', textAlign: 'left',
-                        }}>{p.presetName}</button>
-                        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                          <span style={{ fontSize: 10, color: '#b0956e' }}>{p.weekLabel}</span>
-                          <button onClick={e => deletePreset(e, p.id)} style={{
-                            background: 'none', border: 'none', color: '#c0392b',
-                            fontSize: 12, cursor: 'pointer', padding: '2px 6px',
-                          }}>✕</button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-              }
-            </Card>
-          </div>
-
-          {/* Slides */}
-          {bulletin.slides.length > 0 && (
-            <Card title="Slides" style={{ marginBottom: 20 }}>
-              {bulletin.slides.map((slide, i) => (
-                <SlideEditor
-                  key={slide.id}
-                  slide={slide}
-                  index={i}
-                  total={bulletin.slides.length}
-                  onUpdate={data => updateSlide(slide.id, data)}
-                  onRemove={() => removeSlide(slide.id)}
-                  onMove={dir => moveSlide(i, dir)}
-                />
-              ))}
-            </Card>
-          )}
-
-          {/* Add slide */}
-          <Card title="Add Slide" style={{ marginBottom: 20 }}>
-            <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
-              <div style={{ display: 'flex', borderRadius: 8, overflow: 'hidden', border: '1.5px solid #e0cba8' }}>
-                <select
-                  value={selectedDay}
-                  onChange={e => setSelectedDay(e.target.value)}
-                  style={{ borderRadius: 0, border: 'none', borderRight: '1.5px solid #e0cba8', width: 'auto', fontSize: 13, background: '#fdf6ec', color: '#5c3d1e' }}
-                >
-                  {DAYS.map(d => <option key={d}>{d}</option>)}
-                </select>
-                <button onClick={() => addSlide(SlideType.DAY)} style={addSlideBtn}>📅 Day</button>
-              </div>
-              {[SlideType.ANNOUNCEMENT, SlideType.CONTACT, SlideType.EVENT].map(type => (
-                <button key={type} onClick={() => addSlide(type)} style={{
-                  ...addSlideBtn,
-                  border: '1.5px solid #e0cba8',
-                  borderRadius: 8,
-                }}>
-                  {slideTypeLabels[type]}
-                </button>
-              ))}
-            </div>
-          </Card>
-
-          {/* Images */}
-          <Card title="Images for Telegram" subtitle="Sent before the PDF" style={{ marginBottom: 28 }}>
-            {(bulletin.images ?? []).map((img, i) => (
-              <div key={i} style={{ display: 'flex', gap: 10, marginBottom: 12, alignItems: 'flex-start' }}>
-                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  <input value={img.url} onChange={e => updateImage(i, 'url', e.target.value)} placeholder="Image URL" />
-                  <input value={img.caption} onChange={e => updateImage(i, 'caption', e.target.value)} placeholder="Caption (optional)" />
-                  {img.url && <img src={img.url} alt="" style={{ maxHeight: 100, borderRadius: 6, objectFit: 'cover' }} />}
+            <div style={{ flex: 1 }} />
+            {/* Saved bulletins */}
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              {savedBulletins.slice(0, 4).map(b => (
+                <div key={b.id} style={{ display: 'flex', background: 'rgba(255,255,255,0.07)', borderRadius: 7, overflow: 'hidden', border: '1px solid rgba(255,255,255,0.1)' }}>
+                  <button onClick={() => load(b)} style={{ padding: '5px 10px', background: 'none', border: 'none', color: 'rgba(255,255,255,0.7)', fontSize: 12, cursor: 'pointer' }}>{b.presetName}</button>
+                  <button onClick={e => deleteSaved(e, b.id)} style={{ padding: '5px 8px', background: 'none', border: 'none', color: 'rgba(255,255,255,0.3)', fontSize: 11, cursor: 'pointer' }}>✕</button>
                 </div>
-                <button onClick={() => removeImage(i)} style={{ padding: '8px 10px', background: 'none', border: '1.5px solid #e0cba8', borderRadius: 7, color: '#c0392b', fontSize: 13, cursor: 'pointer' }}>✕</button>
-              </div>
-            ))}
-            <button onClick={addImage} style={{ padding: '7px 16px', background: '#fdf6ec', border: '1.5px dashed #c9a96e', borderRadius: 8, color: '#7a5230', fontSize: 13, cursor: 'pointer' }}>
-              + Add image
-            </button>
-          </Card>
+              ))}
+            </div>
+            <a href="/" style={{ color: 'rgba(255,255,255,0.4)', fontSize: 12, textDecoration: 'none', padding: '6px 12px', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 6 }}>Present →</a>
+          </div>
+        </div>
 
-          {/* Actions */}
-          <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-            <button onClick={save} style={{
-              padding: '12px 32px',
-              background: 'linear-gradient(135deg, #b8860b, #d4a017)',
-              color: '#fff', border: 'none', borderRadius: 10,
-              fontSize: 14, fontWeight: 600,
-              boxShadow: '0 2px 12px rgba(184,134,11,0.3)',
-            }}>
-              Save Preset
-            </button>
-            <button onClick={publish} disabled={publishing} style={{
-              padding: '12px 32px',
-              background: publishing ? '#ccc' : 'linear-gradient(135deg, #3d2408, #5c3d1e)',
-              color: '#fff', border: 'none', borderRadius: 10,
-              fontSize: 14, fontWeight: 600,
-              boxShadow: publishing ? 'none' : '0 2px 12px rgba(92,61,30,0.3)',
-              cursor: publishing ? 'default' : 'pointer',
-            }}>
-              {publishing ? 'Publishing...' : '📤 Publish to Telegram'}
-            </button>
-            {status && <span style={{ fontSize: 13, color: statusColor, fontWeight: 500 }}>{status}</span>}
+        {/* ── Meta bar ── */}
+        <div style={{ background: '#fff', borderBottom: '1.5px solid #e8d9c0', boxShadow: '0 1px 6px rgba(92,61,30,0.07)' }}>
+          <div style={{ maxWidth: 1400, margin: '0 auto', padding: '10px 32px', display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
+            <input
+              value={bulletin.presetName}
+              onChange={e => setBulletin(b => updateBulletin(b, { presetName: e.target.value }))}
+              style={{ fontSize: 16, fontFamily: 'Playfair Display, serif', fontWeight: 600, border: 'none', background: 'transparent', color: '#3d2408', outline: 'none', minWidth: 180 }}
+            />
+            <div style={{ width: 1, height: 20, background: '#e0cba8' }} />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: 11, color: '#b0956e', fontWeight: 600 }}>Week of</span>
+              <input
+                type="date"
+                value={toInputDate(bulletin.weekLabel)}
+                onChange={e => {
+                  const d = new Date(e.target.value + 'T00:00:00');
+                  setBulletin(b => updateBulletin(b, { weekLabel: d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) }));
+                }}
+                style={{ fontSize: 12, padding: '5px 8px', border: '1.5px solid #e0cba8', borderRadius: 7, background: '#fdf6ec', color: '#5c3d1e', outline: 'none' }}
+              />
+              {bulletin.weekLabel && <span style={{ fontSize: 12, color: '#b8860b', fontWeight: 500 }}>📅 {bulletin.weekLabel}</span>}
+            </div>
+            <div style={{ flex: 1 }} />
+            <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+              <button onClick={save} disabled={saving} style={{
+                padding: '8px 24px',
+                background: saving ? '#ccc' : 'linear-gradient(135deg, #b8860b, #d4a017)',
+                color: '#fff', border: 'none', borderRadius: 8,
+                fontSize: 13, fontWeight: 600, cursor: saving ? 'default' : 'pointer',
+                boxShadow: saving ? 'none' : '0 2px 10px rgba(184,134,11,0.3)',
+              }}>
+                {saving ? 'Saving...' : 'Save'}
+              </button>
+              <button onClick={publish} disabled={publishing} style={{
+                padding: '8px 24px',
+                background: publishing ? '#ccc' : 'linear-gradient(135deg, #3d2408, #5c3d1e)',
+                color: '#fff', border: 'none', borderRadius: 8,
+                fontSize: 13, fontWeight: 600, cursor: publishing ? 'default' : 'pointer',
+                boxShadow: publishing ? 'none' : '0 2px 10px rgba(61,36,8,0.25)',
+              }}>
+                {publishing ? 'Publishing...' : '📤 Publish'}
+              </button>
+              {status && <span style={{ fontSize: 12, color: statusColor, fontWeight: 500 }}>{status}</span>}
+            </div>
+          </div>
+        </div>
+
+        {/* ── Main layout ── */}
+        <div style={{ maxWidth: 1400, margin: '0 auto', padding: '24px 32px', display: 'grid', gridTemplateColumns: '300px 1fr', gap: 24, alignItems: 'start' }}>
+
+          {/* Left panel */}
+          <div style={{ position: 'sticky', top: 24, maxHeight: 'calc(100vh - 120px)', overflowY: 'auto', scrollbarWidth: 'thin', scrollbarColor: '#e0cba8 transparent' }}>
+            <div style={{ background: '#fff', borderRadius: 16, border: '1.5px solid #e8d9c0', padding: 16, boxShadow: '0 1px 8px rgba(92,61,30,0.07)' }}>
+              <PresetLibrary
+                presets={presets}
+                onAdd={p => setPresets(ps => [...ps, p])}
+                onEdit={p => setPresets(ps => ps.map(x => x.id === p.id ? p : x))}
+                onDelete={id => setPresets(ps => ps.filter(p => p.id !== id))}
+                onReorder={setPresets}
+              />
+            </div>
           </div>
 
+          {/* Right panel */}
+          <div style={{ background: '#fff', borderRadius: 16, border: '1.5px solid #e8d9c0', padding: '24px 28px', boxShadow: '0 1px 8px rgba(92,61,30,0.07)' }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: '#b0956e', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 20 }}>
+              Weekly Schedule
+            </div>
+            <WeeklyView
+              bulletin={bulletin}
+              onUpdateBulletin={b => setBulletin(updateBulletin(b, {}))}
+              presets={presets}
+            />
+          </div>
         </div>
       </div>
-    </>
-  );
-}
 
-const addSlideBtn = {
-  padding: '8px 16px', background: '#fff',
-  border: 'none', color: '#5c3d1e',
-  fontSize: 13, fontWeight: 500, cursor: 'pointer',
-};
-
-function Card({ title, subtitle, children, style }) {
-  return (
-    <div style={{
-      background: '#fff',
-      border: '1.5px solid #e8d9c0',
-      borderRadius: 14,
-      overflow: 'hidden',
-      boxShadow: '0 1px 8px rgba(92,61,30,0.07)',
-      marginBottom: 20,
-      ...style,
-    }}>
-      <div style={{
-        padding: '14px 20px',
-        borderBottom: '1.5px solid #f0e4cc',
-        background: 'linear-gradient(to right, #fdf6ec, #faf0e0)',
-        display: 'flex', alignItems: 'baseline', gap: 10,
-      }}>
-        <span style={{ fontSize: 13, fontWeight: 600, color: '#5c3d1e', letterSpacing: 0.3 }}>{title}</span>
-        {subtitle && <span style={{ fontSize: 11, color: '#b0956e' }}>{subtitle}</span>}
-      </div>
-      <div style={{ padding: '18px 20px' }}>{children}</div>
-    </div>
+      {/* Drag overlay */}
+      <DragOverlay>
+        {activePreset && (
+          <div style={{
+            padding: '9px 14px',
+            background: '#fff8ee',
+            border: `1.5px solid ${activePreset.color}`,
+            borderLeft: `4px solid ${activePreset.color}`,
+            borderRadius: 10, fontSize: 13, fontWeight: 600, color: '#3d2408',
+            boxShadow: '0 8px 24px rgba(92,61,30,0.2)', cursor: 'grabbing',
+            display: 'flex', alignItems: 'center', gap: 8,
+          }}>
+            <div style={{ width: 8, height: 8, borderRadius: '50%', background: activePreset.color }} />
+            {activePreset.name}
+          </div>
+        )}
+      </DragOverlay>
+    </DndContext>
   );
 }
