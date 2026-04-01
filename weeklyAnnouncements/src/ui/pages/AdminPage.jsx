@@ -23,20 +23,58 @@ export default function AdminPage() {
   if (unlocked) return <AdminPanel />;
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', gap: 12 }}>
-      <h2>Admin Access</h2>
-      <input
-        type="password"
-        value={input}
-        onChange={e => { setInput(e.target.value); setError(false); }}
-        onKeyDown={e => e.key === 'Enter' && submit()}
-        placeholder="Enter passcode"
-        style={{ padding: '8px 12px', fontSize: 16, borderRadius: 6, border: '1px solid #ccc' }}
-      />
-      {error && <p style={{ color: 'red', margin: 0 }}>Incorrect passcode</p>}
-      <button onClick={submit} style={{ padding: '8px 24px', fontSize: 16, borderRadius: 6, cursor: 'pointer' }}>
-        Enter
-      </button>
+    <div style={{
+      minHeight: '100vh',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      background: 'var(--cream)',
+    }}>
+      <div style={{
+        background: 'var(--white)',
+        border: '1.5px solid var(--border)',
+        borderRadius: 16,
+        padding: '48px 40px',
+        width: 360,
+        boxShadow: 'var(--shadow)',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        gap: 16,
+      }}>
+        <div style={{ fontSize: 36, marginBottom: 4 }}>✝</div>
+        <h1 style={{ fontSize: 24, color: 'var(--brown)', marginBottom: 4 }}>Weekly Announcements</h1>
+        <p style={{ color: 'var(--text-muted)', fontSize: 14, marginBottom: 8 }}>Admin access</p>
+        <input
+          type="password"
+          value={input}
+          onChange={e => { setInput(e.target.value); setError(false); }}
+          onKeyDown={e => e.key === 'Enter' && submit()}
+          placeholder="Enter passcode"
+          style={{ textAlign: 'center', letterSpacing: 4, fontSize: 16 }}
+          autoFocus
+        />
+        {error && (
+          <p style={{ color: 'var(--danger)', fontSize: 13, margin: 0 }}>Incorrect passcode</p>
+        )}
+        <button onClick={submit} style={{
+          width: '100%',
+          padding: '10px 0',
+          background: 'var(--gold)',
+          color: 'var(--white)',
+          border: 'none',
+          borderRadius: 'var(--radius)',
+          fontSize: 15,
+          fontWeight: 600,
+          marginTop: 4,
+          transition: 'background 0.2s',
+        }}
+          onMouseOver={e => e.target.style.background = 'var(--gold-hover)'}
+          onMouseOut={e => e.target.style.background = 'var(--gold)'}
+        >
+          Enter
+        </button>
+      </div>
     </div>
   );
 }

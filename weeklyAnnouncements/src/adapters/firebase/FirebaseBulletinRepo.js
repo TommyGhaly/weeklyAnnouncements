@@ -23,7 +23,9 @@ export class FirebaseBulletinRepo extends BulletinRepository {
 
   async listPresets() {
     const snap = await getDocs(this.col);
-    return snap.docs.map(d => d.data());
+    return snap.docs.map(d => d.data()).sort((a, b) =>
+      new Date(b.updatedAt) - new Date(a.updatedAt)
+    );
   }
 
   async delete(id) {

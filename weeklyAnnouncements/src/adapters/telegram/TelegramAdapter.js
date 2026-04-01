@@ -1,4 +1,5 @@
 import { NotificationPort } from '../../core/ports/NotificationPort';
+import { CHURCH_NAME } from '../../core/domain/Bulletin';
 
 export class TelegramAdapter extends NotificationPort {
   constructor() {
@@ -9,43 +10,71 @@ export class TelegramAdapter extends NotificationPort {
   }
 
   async publish(bulletin, pdfBlob) {
-    const caption = this.formatDigest(bulletin);
+    // 1. Send each uploaded image first
+    for (const img of bulletin.images ?? []) {
+      if (!img.url) continue;
+      await this._sendPhoto(img.url, img.caption ?? '');
+    }
+
+    // 2. Send PDF with digest as caption
+    await this._sendDocument(pdfBlob, this.formatDigest(bulletin));
+  }
+
+  async _sendPhoto(url, caption) {
     const form = new FormData();
     form.append('chat_id', this.chatId);
-    form.append('document', pdfBlob, 'bulletin.pdf');
+    form.append('photo', url);
     form.append('caption', caption);
+    const res = await fetch(`${this.base}/sendPhoto`, { method: 'POST', body: form });
+    if (!res.ok) throw new Error(`Telegram photo error: ${res.statusText}`);
+  }
+
+  async _sendDocument(pdfBlob, caption) {
+    const form = new FormData();
+    form.append('chat_id', this.chatId);
+    form.append('document', pdfBlob, 'weekly-bulletin.pdf');
+    form.append('caption', caption.slice(0, 1024)); // Telegram caption limit
     form.append('parse_mode', 'Markdown');
-
-    const res = await fetch(`${this.base}/sendDocument`, {
-      method: 'POST',
-      body: form,
-    });
-
-    if (!res.ok) throw new Error(`Telegram error: ${res.statusText}`);
-    return res.json();
+    const res = await fetch(`${this.base}/sendDocument`, { method: 'POST', body: form });
+    if (!res.ok) throw new Error(`Telegram document error: ${res.statusText}`);
   }
 
   formatDigest(bulletin) {
-    const lines = [`📋 *${bulletin.presetName}*\n`];
+    const lines = [
+      `✝ *${CHURCH_NAME}*`,
+      `📋 *${bulletin.presetName}* — ${bulletin.weekLabel}`,
+      '',
+    ];
 
     for (const slide of bulletin.slides) {
       switch (slide.type) {
-        case 'schedule':
-          lines.push('🕐 *Schedule*');
-          slide.data.items?.forEach(i => lines.push(`${i.time} — ${i.label}`));
+        case 'day':
+          lines.push(`*${slide.data.day}*`);
+          slide.data.items?.forEach(i => {
+            const time = i.time ? `${i.time} ` : '';
+            const note = i.note ? ` _(${i.note})_` : '';
+            lines.push(`  ${time}${i.label}${note}`);
+          });
           lines.push('');
           break;
         case 'announcement':
-          lines.push('📢 *Announcements*');
-          slide.data.items?.forEach(i => lines.push(`• ${i}`));
+          lines.push(`📢 *${slide.data.title}*`);
+          slide.data.items?.forEach(i => lines.push(`  • ${i}`));
           lines.push('');
           break;
-        case 'custom':
-          lines.push(`*${slide.data.title}*`);
-          lines.push(slide.data.body);
+        case 'contact':
+          lines.push(`📞 *${slide.data.title}*`);
+          slide.data.entries?.forEach(e => {
+            lines.push(`  ${e.role ? `_${e.role}_: ` : ''}${e.name} ${e.phone ? `— ${e.phone}` : ''}`);
+          });
           lines.push('');
           break;
-        case 'image':
+        case 'event':
+          lines.push(`🗓 *${slide.data.title}*`);
+          if (slide.data.subtitle) lines.push(`  ${slide.data.subtitle}`);
+          if (slide.data.time) lines.push(`  🕐 ${slide.data.time}`);
+          if (slide.data.note) lines.push(`  ${slide.data.note}`);
+          lines.push('');
           break;
       }
     }

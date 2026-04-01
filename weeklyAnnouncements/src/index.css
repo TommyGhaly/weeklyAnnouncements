@@ -1,0 +1,57 @@
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600&family=Inter:wght@400;500;600&display=swap');
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --cream: #fdf6ec;
+  --cream-dark: #f5e9d6;
+  --gold: #b8860b;
+  --gold-light: #d4a017;
+  --gold-hover: #9a7009;
+  --brown: #5c3d1e;
+  --brown-light: #7a5230;
+  --text: #2c1a0e;
+  --text-muted: #7a6352;
+  --border: #e0cba8;
+  --white: #ffffff;
+  --danger: #c0392b;
+  --success: #27ae60;
+  --radius: 10px;
+  --shadow: 0 2px 12px rgba(92,61,30,0.10);
+}
+
+body {
+  font-family: 'Inter', sans-serif;
+  background: var(--cream);
+  color: var(--text);
+}
+
+h1, h2, h3 {
+  font-family: 'Playfair Display', serif;
+}
+
+button {
+  font-family: 'Inter', sans-serif;
+  cursor: pointer;
+}
+
+input, textarea {
+  font-family: 'Inter', sans-serif;
+  font-size: 14px;
+  padding: 8px 12px;
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--white);
+  color: var(--text);
+  outline: none;
+  transition: border-color 0.2s;
+  width: 100%;
+}
+
+input:focus, textarea:focus {
+  border-color: var(--gold);
+}
+
+textarea {
+  resize: vertical;
+}
