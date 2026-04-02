@@ -10,13 +10,11 @@ export class TelegramAdapter extends NotificationPort {
   }
 
   async publish(bulletin, pdfBlob) {
-    // 1. Send each uploaded image first
     for (const img of bulletin.images ?? []) {
       if (!img.url) continue;
       await this._sendPhoto(img.url, img.caption ?? '');
     }
 
-    // 2. Send PDF with digest split across messages if needed
     const digest = this.formatDigest(bulletin);
     if (digest.length <= 1024) {
       await this._sendDocument(pdfBlob, digest);
@@ -32,7 +30,6 @@ export class TelegramAdapter extends NotificationPort {
       await this._sendMessage(text);
       return;
     }
-    // Split on day dividers to keep sections intact
     const chunks = [];
     let current = '';
     for (const line of text.split('\n')) {
@@ -69,7 +66,7 @@ export class TelegramAdapter extends NotificationPort {
     const form = new FormData();
     form.append('chat_id', this.chatId);
     form.append('document', pdfBlob, 'weekly-bulletin.pdf');
-    form.append('caption', caption.slice(0, 1024)); // Telegram caption limit
+    form.append('caption', caption.slice(0, 1024));
     form.append('parse_mode', 'Markdown');
     const res = await fetch(`${this.base}/sendDocument`, { method: 'POST', body: form });
     if (!res.ok) throw new Error(`Telegram document error: ${res.statusText}`);
@@ -81,10 +78,20 @@ export class TelegramAdapter extends NotificationPort {
       ``,
       `📋 *${bulletin.presetName}*`,
       `🗓 Week of ${bulletin.weekLabel}`,
-      ``,
-      `━━━━━━━━━━━━━━━━━━━━`,
-      ``,
     ];
+
+    // Header notes
+    const headerNotes = (bulletin.headerNotes ?? []).filter(n => n.text?.trim());
+    if (headerNotes.length > 0) {
+      lines.push(``);
+      for (const n of headerNotes) {
+        lines.push(`   📌 _${n.text}_`);
+      }
+    }
+
+    lines.push(``);
+    lines.push(`━━━━━━━━━━━━━━━`);
+    lines.push(``);
 
     // Multi-day events
     const multiDay = bulletin.multiDayEvents ?? [];
@@ -100,7 +107,7 @@ export class TelegramAdapter extends NotificationPort {
         if (e.notes) lines.push(`   _${e.notes}_`);
         lines.push(``);
       }
-      lines.push(`━━━━━━━━━━━━━━━━━━━━`);
+      lines.push(`━━━━━━━━━━━━━━━`);
       lines.push(``);
     }
 
@@ -111,7 +118,7 @@ export class TelegramAdapter extends NotificationPort {
       lines.push(``);
       for (const a of announcements) lines.push(`   • ${a.text}`);
       lines.push(``);
-      lines.push(`━━━━━━━━━━━━━━━━━━━━`);
+      lines.push(`━━━━━━━━━━━━━━━`);
       lines.push(``);
     }
 
@@ -131,9 +138,10 @@ export class TelegramAdapter extends NotificationPort {
         for (const c of e.contacts ?? []) {
           if (!c.name && !c.phone) continue;
           lines.push(`   📞 ${c.name}${c.phone ? ` · ${c.phone}` : ''}`);
-        }        lines.push(``);
+        }
+        lines.push(``);
       }
-      lines.push(`━━━━━━━━━━━━━━━━━━━━`);
+      lines.push(`━━━━━━━━━━━━━━━`);
       lines.push(``);
     }
 

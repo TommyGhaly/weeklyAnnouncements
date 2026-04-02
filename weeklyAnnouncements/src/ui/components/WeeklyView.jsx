@@ -9,7 +9,27 @@ import { useDragCtx } from '../drag/DragContext.jsx';
 const ALL_DAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
 const prevDayName = day => ALL_DAYS[(ALL_DAYS.indexOf(day) - 1 + 7) % 7];
 const nextDayName = day => ALL_DAYS[(ALL_DAYS.indexOf(day) + 1) % 7];
-const createDay = day => ({ day, date: '', events: [] });
+
+/** ISO string from a Date */
+function toISO(d) {
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+
+/** Add n days to an ISO date string, return ISO string. Returns '' if input is empty/invalid. */
+function addDaysISO(iso, n) {
+  if (!iso) return '';
+  const d = new Date(iso + 'T00:00:00');
+  if (isNaN(d)) return '';
+  d.setDate(d.getDate() + n);
+  return toISO(d);
+}
+
+/** Compute ISO date for a new day inserted before/after a reference day */
+function computeInsertDate(refDay, position) {
+  return addDaysISO(refDay.date, position === 'before' ? -1 : 1);
+}
+
+const createDay = (day, date = '') => ({ day, date, events: [] });
 
 // ── Event card ────────────────────────────────────────────────
 function EventCard({ event, dayIdx, eventIdx, onUpdate, onRemove, presets }) {
@@ -184,10 +204,11 @@ function InsertBtn({ label, onClick }) {
 // ── Weekly view ───────────────────────────────────────────────
 export default function WeeklyView({ bulletin, onUpdateBulletin, presets }) {
   const insertDay = (atIdx, position) => {
-    const refDay = bulletin.days[atIdx].day;
-    const newDayName = position === 'before' ? prevDayName(refDay) : nextDayName(refDay);
+    const refDay = bulletin.days[atIdx];
+    const newDayName = position === 'before' ? prevDayName(refDay.day) : nextDayName(refDay.day);
+    const newDate = computeInsertDate(refDay, position);
     const days = [...bulletin.days];
-    days.splice(position === 'before' ? atIdx : atIdx + 1, 0, createDay(newDayName));
+    days.splice(position === 'before' ? atIdx : atIdx + 1, 0, createDay(newDayName, newDate));
     onUpdateBulletin({ ...bulletin, days });
   };
 

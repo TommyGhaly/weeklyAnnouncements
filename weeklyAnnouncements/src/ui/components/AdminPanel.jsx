@@ -2,13 +2,14 @@ import { useState, useEffect, useCallback } from 'react';
 import { FirebaseBulletinRepo } from '../../adapters/firebase/FirebaseBulletinRepo';
 import { ReactPDFExporter } from '../../adapters/export/ReactPDFExporter.jsx';
 import { TelegramAdapter } from '../../adapters/telegram/TelegramAdapter';
-import { createBulletin, updateBulletin, createEvent, DEFAULT_PRESETS, CHURCH_NAME, getDatesForWeek } from '../../core/domain/Bulletin';
+import { createBulletin, updateBulletin, createEvent, createHeaderNote, DEFAULT_PRESETS, CHURCH_NAME } from '../../core/domain/Bulletin';
 import { fetchPresets, savePreset, deletePreset as deletePresetFS, savePresetOrder } from '../../adapters/firebase/FirebasePresetRepo';
 import { arrayMove } from '@dnd-kit/sortable';
 import DragProvider from '../drag/DragContext.jsx';
 import PresetLibrary from './PresetLibrary';
 import WeeklyView from './WeeklyView';
 import ExtrasPanel from './ExtrasPanel';
+import ImagePicker from './ImagePicker';
 
 const repo = new FirebaseBulletinRepo();
 const exporter = new ReactPDFExporter();
@@ -30,9 +31,14 @@ export default function AdminPanel() {
   const [statusType, setStatusType] = useState('info');
   const [publishing, setPublishing] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [logoUrl, setLogoUrl] = useState('');
+
+  const [activeBulletinId, setActiveBulletinId] = useState(null);
 
   useEffect(() => {
     repo.listPresets().then(setSavedBulletins);
+    repo.getLogo().then(setLogoUrl).catch(() => {});
+    repo.getActive().then(setActiveBulletinId);
     fetchPresets().then(ps => {
       if (ps.length === 0) {
         Promise.all(DEFAULT_PRESETS.map((p, i) => savePreset({ ...p, order: i })))
@@ -70,12 +76,16 @@ export default function AdminPanel() {
     await savePresetOrder(reordered);
   };
 
+  const handleLogoChange = async url => {
+    setLogoUrl(url);
+    await repo.setLogo(url);
+  };
+
   const handleDrop = useCallback((dragData, zoneData) => {
     const { dayIdx } = zoneData;
     const days = [...bulletin.days];
 
     if (dragData.id && dragData.color) {
-      // Preset drop
       const newEvent = createEvent(dragData);
       days[dayIdx] = { ...days[dayIdx], events: [...days[dayIdx].events, newEvent] };
       setBulletin(b => updateBulletin(b, { days }));
@@ -83,7 +93,6 @@ export default function AdminPanel() {
     }
 
     if (dragData.name === 'New Event') {
-      // One-time event
       const newEvent = createEvent(null, { name: 'New Event' });
       days[dayIdx] = { ...days[dayIdx], events: [...days[dayIdx].events, newEvent] };
       setBulletin(b => updateBulletin(b, { days }));
@@ -91,7 +100,6 @@ export default function AdminPanel() {
     }
 
     if (dragData.event) {
-      // Move event between days
       const { event, dayIdx: fromDay, eventIdx } = dragData;
       if (fromDay === dayIdx) return;
       days[fromDay] = { ...days[fromDay], events: days[fromDay].events.filter((_, i) => i !== eventIdx) };
@@ -128,6 +136,12 @@ export default function AdminPanel() {
     setSaving(false);
   };
 
+  const setAsPresentation = async (id) => {
+    await repo.setActive(id ?? bulletin.id);
+    setActiveBulletinId(id ?? bulletin.id);
+    setMsg('Now presenting this bulletin!', 'success');
+  };
+
   const load = b => {
     setBulletin(b);
     setMsg(`Loaded: ${b.presetName}`, 'info');
@@ -143,7 +157,7 @@ export default function AdminPanel() {
     setPublishing(true);
     try {
       setMsg('Generating PDF...', 'info');
-      const blob = await exporter.export(bulletin);
+      const blob = await exporter.export(bulletin, logoUrl);
       setMsg('Publishing to Telegram...', 'info');
       await telegram.publish(bulletin, blob);
       setMsg('Published!', 'success');
@@ -195,11 +209,19 @@ export default function AdminPanel() {
               <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: 10, letterSpacing: 2, textTransform: 'uppercase' }}>{CHURCH_NAME}</div>
               <div style={{ color: '#fff', fontSize: 16, fontFamily: 'Playfair Display, serif', fontWeight: 600 }}>Weekly Announcements</div>
             </div>
-            <div style={{ flex: 1 }} />
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: 11, color: '#b0956e', fontWeight: 600 }}>Church logo</span>
+              <ImagePicker value={logoUrl} onChange={handleLogoChange} />
+            </div>
+            <div style={{ width: 1, height: 20, background: '#e0cba8' }} />
             <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
               {savedBulletins.slice(0, 4).map(b => (
-                <div key={b.id} style={{ display: 'flex', background: 'rgba(255,255,255,0.07)', borderRadius: 7, overflow: 'hidden', border: '1px solid rgba(255,255,255,0.1)' }}>
-                  <button onClick={() => load(b)} style={{ padding: '5px 10px', background: 'none', border: 'none', color: 'rgba(255,255,255,0.7)', fontSize: 12, cursor: 'pointer' }}>{b.presetName}</button>
+                <div key={b.id} style={{ display: 'flex', background: activeBulletinId === b.id ? 'rgba(39,174,96,0.15)' : 'rgba(255,255,255,0.07)', borderRadius: 7, overflow: 'hidden', border: activeBulletinId === b.id ? '1px solid rgba(39,174,96,0.4)' : '1px solid rgba(255,255,255,0.1)' }}>
+                  <button onClick={() => load(b)} style={{ padding: '5px 10px', background: 'none', border: 'none', color: activeBulletinId === b.id ? '#2ecc71' : 'rgba(255,255,255,0.7)', fontSize: 12, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5 }}>
+                    {activeBulletinId === b.id && <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#2ecc71', display: 'inline-block', boxShadow: '0 0 6px #2ecc7188' }} />}
+                    {b.presetName}
+                  </button>
+                  <button onClick={() => setAsPresentation(b.id)} title="Set as presentation" style={{ padding: '5px 6px', background: 'none', border: 'none', color: activeBulletinId === b.id ? '#2ecc71' : 'rgba(255,255,255,0.3)', fontSize: 11, cursor: 'pointer' }}>📺</button>
                   <button onClick={e => deleteSaved(e, b.id)} style={{ padding: '5px 8px', background: 'none', border: 'none', color: 'rgba(255,255,255,0.3)', fontSize: 11, cursor: 'pointer' }}>✕</button>
                 </div>
               ))}
@@ -224,15 +246,47 @@ export default function AdminPanel() {
                 value={toInputDate(bulletin.weekLabel)}
                 onChange={e => {
                   const d = new Date(e.target.value + 'T00:00:00');
+                  if (isNaN(d)) return;
                   const label = d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
-                  const datesForWeek = getDatesForWeek(d);
-                  setBulletin(b => updateBulletin(b, {
-                    weekLabel: label,
-                    days: b.days.map(day => {
-                      const match = datesForWeek.find(dw => dw.day === day.day);
-                      return match ? { ...day, date: match.date } : day;
-                    }),
-                  }));
+                  const ALL_DAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+                  const toISO = dt => `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`;
+                  const pickedDow = d.getDay();
+
+                  setBulletin(b => {
+                    if (!b.days.length) return updateBulletin(b, { weekLabel: label });
+
+                    // Find anchor: the day in the array whose weekday matches the picked date
+                    let anchorIdx = b.days.findIndex(day => ALL_DAYS.indexOf(day.day) === pickedDow);
+                    // If no exact match, use first day as anchor
+                    if (anchorIdx === -1) anchorIdx = 0;
+
+                    // Compute anchor's date
+                    const anchorDow = ALL_DAYS.indexOf(b.days[anchorIdx].day);
+                    let anchorOffset = anchorDow - pickedDow;
+                    // For exact match this is 0; otherwise find nearest
+                    if (anchorOffset > 3) anchorOffset -= 7;
+                    if (anchorOffset < -3) anchorOffset += 7;
+                    const anchorDate = new Date(d);
+                    anchorDate.setDate(anchorDate.getDate() + anchorOffset);
+
+                    // Fan out from anchor: each day is offset by its position distance in days
+                    const updatedDays = b.days.map((day, i) => {
+                      const dayDow = ALL_DAYS.indexOf(day.day);
+                      // Days between this day's weekday and anchor's weekday
+                      let offset = dayDow - anchorDow;
+                      // Adjust by week if this day is before/after anchor in the array
+                      if (i < anchorIdx && offset > 0) offset -= 7;
+                      if (i > anchorIdx && offset < 0) offset += 7;
+                      if (i === anchorIdx) offset = 0;
+                      // Handle same weekday appearing multiple times (e.g. two Mondays)
+                      // Days after anchor with offset <= 0 need +7, before anchor with offset >= 0 need -7
+                      const dayDate = new Date(anchorDate);
+                      dayDate.setDate(dayDate.getDate() + offset);
+                      return { ...day, date: toISO(dayDate) };
+                    });
+
+                    return updateBulletin(b, { weekLabel: label, days: updatedDays });
+                  });
                 }}
                 style={{ fontSize: 12, padding: '5px 8px', border: '1.5px solid #e0cba8', borderRadius: 7, background: '#fdf6ec', color: '#5c3d1e', outline: 'none' }}
               />
@@ -244,6 +298,10 @@ export default function AdminPanel() {
             <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
               <button onClick={save} disabled={saving} style={{ padding: '8px 24px', background: saving ? '#ccc' : 'linear-gradient(135deg, #b8860b, #d4a017)', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: saving ? 'default' : 'pointer', boxShadow: saving ? 'none' : '0 2px 10px rgba(184,134,11,0.3)' }}>
                 {saving ? 'Saving...' : 'Save'}
+              </button>
+              <button onClick={() => setAsPresentation()} style={{ padding: '8px 20px', background: activeBulletinId === bulletin.id ? 'linear-gradient(135deg, #27ae60, #2ecc71)' : 'linear-gradient(135deg, #2c3e50, #34495e)', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer', boxShadow: '0 2px 10px rgba(0,0,0,0.15)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                {activeBulletinId === bulletin.id && <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#fff', display: 'inline-block', boxShadow: '0 0 6px rgba(255,255,255,0.8)' }} />}
+                {activeBulletinId === bulletin.id ? 'Presenting' : '📺 Set as Presentation'}
               </button>
               <button onClick={publishAnnouncementsOnly} disabled={publishing} style={{ padding: '8px 20px', background: publishing ? '#ccc' : 'linear-gradient(135deg, #1a5276, #2980b9)', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: publishing ? 'default' : 'pointer' }}>
                 📢 Announcements
@@ -265,6 +323,39 @@ export default function AdminPanel() {
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+            {/* Header Notes */}
+            <div style={{ background: '#fff', borderRadius: 16, border: '1.5px solid #e8d9c0', padding: '20px 28px', boxShadow: '0 1px 8px rgba(92,61,30,0.07)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+                <div style={{ fontSize: 10, fontWeight: 700, color: '#b0956e', textTransform: 'uppercase', letterSpacing: 1 }}>Header Notes</div>
+                <button
+                  onClick={() => setBulletin(b => updateBulletin(b, { headerNotes: [...(b.headerNotes ?? []), createHeaderNote()] }))}
+                  style={{ padding: '4px 12px', background: 'none', border: '1.5px dashed #c9a96e', borderRadius: 6, color: '#7a5230', fontSize: 11, cursor: 'pointer', fontWeight: 600 }}
+                >+ Add note</button>
+              </div>
+              {(bulletin.headerNotes ?? []).length === 0 && (
+                <div style={{ fontSize: 12, color: '#c4a882', padding: '8px 0' }}>No header notes — these appear at the top of the presentation and Telegram message.</div>
+              )}
+              {(bulletin.headerNotes ?? []).map((note, i) => (
+                <div key={note.id} style={{ display: 'flex', gap: 8, marginBottom: 8, alignItems: 'center' }}>
+                  <div style={{ width: 3, alignSelf: 'stretch', background: '#d4a017', borderRadius: 2, flexShrink: 0 }} />
+                  <input
+                    value={note.text}
+                    onChange={e => {
+                      const notes = [...(bulletin.headerNotes ?? [])];
+                      notes[i] = { ...notes[i], text: e.target.value };
+                      setBulletin(b => updateBulletin(b, { headerNotes: notes }));
+                    }}
+                    placeholder="Enter note..."
+                    style={{ flex: 1, padding: '8px 10px', fontSize: 13, border: '1.5px solid #e0cba8', borderRadius: 7, background: '#fff', color: '#3d2408', outline: 'none', fontFamily: 'Inter, sans-serif' }}
+                  />
+                  <button
+                    onClick={() => setBulletin(b => updateBulletin(b, { headerNotes: (b.headerNotes ?? []).filter((_, j) => j !== i) }))}
+                    style={{ background: 'none', border: 'none', color: '#c0392b', fontSize: 13, cursor: 'pointer', padding: '2px 6px', flexShrink: 0 }}
+                  >✕</button>
+                </div>
+              ))}
+            </div>
+
             <div style={{ background: '#fff', borderRadius: 16, border: '1.5px solid #e8d9c0', padding: '24px 28px', boxShadow: '0 1px 8px rgba(92,61,30,0.07)' }}>
               <div style={{ fontSize: 10, fontWeight: 700, color: '#b0956e', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 20 }}>Weekly Schedule</div>
               <WeeklyView bulletin={bulletin} onUpdateBulletin={b => setBulletin(updateBulletin(b, {}))} presets={presets} />

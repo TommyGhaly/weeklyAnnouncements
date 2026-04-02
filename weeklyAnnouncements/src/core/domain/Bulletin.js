@@ -1,4 +1,5 @@
 export const CHURCH_NAME = 'St. Philopater Mercurius & St. Mina';
+export const ACTIVE_BULLETIN_KEY = 'wa_active_bulletin';
 
 export const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
@@ -29,9 +30,15 @@ function getWeekLabel(date = new Date()) {
   return monday.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
 }
 
+export const createHeaderNote = (text = '') => ({
+  id: crypto.randomUUID(),
+  text,
+});
+
 export const createAnnouncement = (text = '') => ({
   id: crypto.randomUUID(),
   text,
+  image: '',
   addedAt: new Date().toISOString(),
 });
 
@@ -53,6 +60,7 @@ export const createBulletin = (presetName = 'Weekly Bulletin') => {
     id: crypto.randomUUID(),
     presetName,
     weekLabel: getWeekLabel(),
+    headerNotes: [],
     days: DAYS.map((day, i) => ({ day, date: dates[i].date, events: [] })),
     multiDayEvents: [],
     announcements: [],

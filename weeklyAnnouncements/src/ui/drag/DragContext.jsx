@@ -4,12 +4,11 @@ const Ctx = createContext(null);
 export const useDragCtx = () => useContext(Ctx);
 
 export default function DragProvider({ children, onDrop, onSort, onEventReorder }) {
-  const [dragging, setDragging] = useState(null); // { type, data, x, y }
+  const [dragging, setDragging] = useState(null);
   const [overZone, setOverZone] = useState(null);
-  const zonesRef = useRef(new Map()); // id -> { el, data }
-  const sortZonesRef = useRef(new Map()); // id -> { el, data }
+  const zonesRef = useRef(new Map());
+  const sortZonesRef = useRef(new Map());
   const frameRef = useRef(null);
-  const posRef = useRef({ x: 0, y: 0 });
 
   const registerZone = useCallback((id, el, data) => {
     if (el) zonesRef.current.set(id, { el, data });
@@ -22,26 +21,29 @@ export default function DragProvider({ children, onDrop, onSort, onEventReorder 
   }, []);
 
   const startDrag = useCallback((type, data, x, y) => {
-    console.log('[DragProvider] startDrag', { type, data });
     setDragging({ type, data, x, y });
   }, []);
 
   useEffect(() => {
     if (!dragging) return;
 
+    const hitTest = (map, x, y) => {
+      for (const [id, { el, data }] of map) {
+        const r = el.getBoundingClientRect();
+        if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) return data;
+      }
+      return null;
+    };
+
     const onMove = e => {
       const x = e.clientX, y = e.clientY;
-      posRef.current = { x, y };
       cancelAnimationFrame(frameRef.current);
       frameRef.current = requestAnimationFrame(() => {
         setDragging(d => d ? { ...d, x, y } : null);
-        // Find hovered drop zone
         let found = null;
         for (const [id, { el }] of zonesRef.current) {
           const r = el.getBoundingClientRect();
-          if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) {
-            found = id; break;
-          }
+          if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) { found = id; break; }
         }
         setOverZone(found);
       });
@@ -51,29 +53,18 @@ export default function DragProvider({ children, onDrop, onSort, onEventReorder 
       const x = e.clientX, y = e.clientY;
       cancelAnimationFrame(frameRef.current);
 
-      console.log('mouseup', { x, y, zones: zonesRef.current.size, sortZones: sortZonesRef.current.size });
-      console.log('dragging type:', dragging?.type);
-
       if (dragging.type === 'sort') {
-        for (const [id, { el, data }] of sortZonesRef.current) {
-          const r = el.getBoundingClientRect();
-          console.log('sort zone', id, r, 'hit?', x >= r.left && x <= r.right && y >= r.top && y <= r.bottom);
-          if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) {
-            onSort?.(dragging.data, data);
-            break;
-          }
-        }
+        // Preset library reorder
+        const target = hitTest(sortZonesRef.current, x, y);
+        if (target) onSort?.(dragging.data, target);
+      } else if (dragging.type === 'event-sort') {
+        // Event reorder within a day
+        const target = hitTest(sortZonesRef.current, x, y);
+        if (target) onEventReorder?.(dragging.data, target);
       } else {
-        console.log('[onUp] checking', zonesRef.current.size, 'drop zones');
-        for (const [id, { el, data }] of zonesRef.current) {
-          const r = el.getBoundingClientRect();
-          const hit = x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
-          console.log('[onUp] zone', id, hit ? '✅ HIT' : '❌');
-          if (hit) {
-            onDrop?.(dragging.data, data);
-            break;
-          }
-        }
+        // Preset/event drop onto a day
+        const target = hitTest(zonesRef.current, x, y);
+        if (target) onDrop?.(dragging.data, target);
       }
 
       setDragging(null);
@@ -87,12 +78,11 @@ export default function DragProvider({ children, onDrop, onSort, onEventReorder 
       window.removeEventListener('mouseup', onUp);
       cancelAnimationFrame(frameRef.current);
     };
-  }, [dragging, onDrop, onSort]);
+  }, [dragging, onDrop, onSort, onEventReorder]);
 
   return (
     <Ctx.Provider value={{ dragging, overZone, startDrag, registerZone, registerSortZone }}>
       {children}
-      {/* Ghost */}
       {dragging && (
         <div style={{
           position: 'fixed',
@@ -113,7 +103,7 @@ export default function DragProvider({ children, onDrop, onSort, onEventReorder 
         }}>
           <div style={{ width: 8, height: 8, borderRadius: '50%', background: dragging.data.color ?? '#b8860b', flexShrink: 0 }} />
           <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {dragging.data.name ?? dragging.data.preset?.name ?? 'Event'}
+            {dragging.data.name ?? dragging.data.event?.name ?? 'Event'}
           </span>
         </div>
       )}
