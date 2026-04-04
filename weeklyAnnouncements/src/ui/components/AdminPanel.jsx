@@ -28,6 +28,18 @@ function toInputDate(weekLabel) {
   try { const d = new Date(weekLabel); if (isNaN(d)) return ''; return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; } catch { return ''; }
 }
 
+function timeAgo(iso) {
+  if (!iso) return '';
+  const diff = Date.now() - new Date(iso).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  return `${days}d ago`;
+}
+
 // ── Compact summary card ──────────────────────────────────────
 function SummaryCard({ item, isActive, isTemplate, onEdit, onPresent, onDelete, onEndSession }) {
   const dayCount = (item.days ?? []).filter(d => d.events?.length > 0).length;
@@ -52,7 +64,6 @@ function SummaryCard({ item, isActive, isTemplate, onEdit, onPresent, onDelete, 
         {dayCount > 0 && <span style={{ fontSize: 10, color: '#5c3d1e', background: '#fdf6ec', padding: '2px 7px', borderRadius: 4, border: '1px solid #e8d9c0' }}>{dayCount} days · {eventCount} events</span>}
       </div>
 
-      {/* Compact day list */}
       {(item.days ?? []).filter(d => d.events?.length > 0).slice(0, 4).map((day, i) => (
         <div key={i} style={{ fontSize: 11, color: '#5c3d1e', padding: '2px 0', display: 'flex', gap: 8 }}>
           <span style={{ fontWeight: 700, minWidth: 60, fontSize: 10 }}>{day.day}</span>
@@ -76,9 +87,89 @@ function SummaryCard({ item, isActive, isTemplate, onEdit, onPresent, onDelete, 
   );
 }
 
+// ── Telegram Status Bar ──────────────────────────────────────
+function TelegramBar({ session, publishing, onPublish, onRepublish, onUndo, onPublishAnnouncements }) {
+  const ids = session?.telegramMessageIds ?? [];
+  const hasSent = ids.length > 0;
+  const lastPub = session?.lastPublished ?? session?.telegramLastSent;
+  const lastAnn = session?.lastAnnouncementsSent;
+
+  return (
+    <div style={{
+      background: '#fff', borderRadius: 12, border: '1.5px solid #e8d9c0',
+      padding: '14px 20px', boxShadow: '0 1px 6px rgba(92,61,30,0.05)',
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontSize: 14 }}>📨</span>
+          <span style={{ fontSize: 12, fontWeight: 700, color: '#5c3d1e', textTransform: 'uppercase', letterSpacing: 1 }}>Telegram</span>
+        </div>
+        {hasSent && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#27ae60' }} />
+            <span style={{ fontSize: 11, color: '#27ae60', fontWeight: 600 }}>Sent</span>
+            {lastPub && <span style={{ fontSize: 10, color: '#b0956e' }}>· {timeAgo(lastPub)}</span>}
+            <span style={{ fontSize: 10, color: '#b0956e' }}>· {ids.length} message{ids.length > 1 ? 's' : ''}</span>
+          </div>
+        )}
+        {!hasSent && (
+          <span style={{ fontSize: 11, color: '#b0956e' }}>Not yet published</span>
+        )}
+      </div>
+
+      {lastAnn && (
+        <div style={{ fontSize: 10, color: '#2980b9', marginBottom: 8 }}>
+          📢 Announcements sent {timeAgo(lastAnn)}
+        </div>
+      )}
+
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+        {!hasSent ? (
+          <button onClick={onPublish} disabled={publishing} style={{
+            padding: '8px 20px', background: publishing ? '#ccc' : 'linear-gradient(135deg, #3d2408, #5c3d1e)',
+            color: '#fff', border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 600,
+            cursor: publishing ? 'default' : 'pointer',
+          }}>
+            {publishing ? 'Publishing...' : '📤 Publish Full Bulletin'}
+          </button>
+        ) : (
+          <>
+            <button onClick={onRepublish} disabled={publishing} style={{
+              padding: '8px 18px', background: publishing ? '#ccc' : 'linear-gradient(135deg, #b8860b, #d4a017)',
+              color: '#fff', border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 600,
+              cursor: publishing ? 'default' : 'pointer',
+            }}>
+              {publishing ? '...' : '🔄 Re-publish (replace)'}
+            </button>
+            <button onClick={onUndo} disabled={publishing} style={{
+              padding: '8px 18px', background: 'none', border: '1.5px solid #c0392b',
+              borderRadius: 8, fontSize: 12, fontWeight: 600, color: '#c0392b',
+              cursor: publishing ? 'default' : 'pointer',
+            }}>
+              🗑 Undo Send
+            </button>
+          </>
+        )}
+        <button onClick={onPublishAnnouncements} disabled={publishing} style={{
+          padding: '8px 16px', background: publishing ? '#ccc' : 'linear-gradient(135deg, #1a5276, #2980b9)',
+          color: '#fff', border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 600,
+          cursor: publishing ? 'default' : 'pointer',
+        }}>
+          📢 Announcements Only
+        </button>
+      </div>
+
+      {hasSent && (
+        <div style={{ fontSize: 10, color: '#b0956e', marginTop: 8, fontStyle: 'italic' }}>
+          Undo is available for 48 hours after sending.
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── Main ──────────────────────────────────────────────────────
 export default function AdminPanel() {
-  // Data
   const [sessions, setSessions] = useState([]);
   const [templates, setTemplates] = useState([]);
   const [presets, setPresets] = useState([]);
@@ -86,21 +177,19 @@ export default function AdminPanel() {
   const [activeBulletinId, setActiveBulletinId] = useState(null);
   const [logoUrl, setLogoUrl] = useState('');
 
-  // Editor state
-  const [editing, setEditing] = useState(null); // session or template object, or null
-  const [editingType, setEditingType] = useState(null); // 'session' | 'template'
+  const [editing, setEditing] = useState(null);
+  const [editingType, setEditingType] = useState(null);
   const [dirty, setDirty] = useState(false);
 
-  // UI state
   const [status, setStatus] = useState('');
   const [statusType, setStatusType] = useState('info');
   const [publishing, setPublishing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [wizardOpen, setWizardOpen] = useState(false);
   const [saveTemplateOpen, setSaveTemplateOpen] = useState(false);
-  const [endSessionTarget, setEndSessionTarget] = useState(null); // session to end
+  const [endSessionTarget, setEndSessionTarget] = useState(null);
   const [endSessionDate, setEndSessionDate] = useState('');
-  const [endSessionMode, setEndSessionMode] = useState('restart'); // 'restart' | 'archive'
+  const [endSessionMode, setEndSessionMode] = useState('restart');
   const [confirm, setConfirm] = useState({ open: false, title: '', message: '', warning: '', confirmLabel: 'Confirm', confirmColor: '#c0392b', onConfirm: () => {} });
 
   const showConfirm = opts => setConfirm({ open: true, confirmColor: '#c0392b', confirmLabel: 'Confirm', warning: '', ...opts });
@@ -227,9 +316,7 @@ export default function AdminPanel() {
   const handleSaveAsTemplate = async (mode, overwriteId, name) => {
     if (!editing || editingType !== 'session') return;
     const tmpl = sessionToTemplate(editing, name);
-    if (mode === 'overwrite' && overwriteId) {
-      tmpl.id = overwriteId;
-    }
+    if (mode === 'overwrite' && overwriteId) tmpl.id = overwriteId;
     await repo.saveTemplate(tmpl);
     setTemplates(await repo.listTemplates());
     setEditing(e => updateSession(e, { templateId: tmpl.id }));
@@ -242,8 +329,7 @@ export default function AdminPanel() {
     const isPresenting = type === 'session' && activeBulletinId === item.id;
     const name = item.presetName ?? item.name;
     showConfirm({
-      title: `Delete ${type}?`,
-      message: `Permanently delete "${name}"?`,
+      title: `Delete ${type}?`, message: `Permanently delete "${name}"?`,
       warning: isPresenting ? 'This is currently being presented!' : '',
       confirmLabel: 'Delete',
       onConfirm: async () => {
@@ -262,35 +348,24 @@ export default function AdminPanel() {
     if (!targetId || activeBulletinId === targetId) return;
     const target = sessions.find(s => s.id === targetId) ?? editing;
     showConfirm({
-      title: 'Switch presentation?',
-      message: `Set "${target?.presetName ?? 'this session'}" as the live presentation?`,
+      title: 'Switch presentation?', message: `Set "${target?.presetName ?? 'this session'}" as the live presentation?`,
       confirmLabel: 'Set as presentation', confirmColor: '#27ae60',
       onConfirm: async () => { closeConfirm(); await repo.setActive(targetId); setActiveBulletinId(targetId); setMsg('Now presenting!', 'success'); },
     });
   };
 
   // ── End session ────────────────────────────────────────────
-  const handleEndSession = session => {
-    setEndSessionTarget(session);
-    setEndSessionDate('');
-    setEndSessionMode('restart');
-  };
+  const handleEndSession = session => { setEndSessionTarget(session); setEndSessionDate(''); setEndSessionMode('restart'); };
 
   const confirmEndSession = async () => {
     if (!endSessionTarget) return;
     const session = endSessionTarget;
     const wasActive = activeBulletinId === session.id;
-
     if (endSessionMode === 'restart' && endSessionDate) {
       const tmpl = session.templateId ? templates.find(t => t.id === session.templateId) : null;
       let newSession;
-      if (tmpl) {
-        newSession = templateToSession(tmpl, endSessionDate);
-        newSession.presetName = session.presetName;
-      } else {
-        const tmpTemplate = sessionToTemplate(session, session.presetName);
-        newSession = templateToSession(tmpTemplate, endSessionDate);
-      }
+      if (tmpl) { newSession = templateToSession(tmpl, endSessionDate); newSession.presetName = session.presetName; }
+      else { const tmp = sessionToTemplate(session, session.presetName); newSession = templateToSession(tmp, endSessionDate); }
       await repo.saveSession(newSession);
       if (wasActive) { await repo.setActive(newSession.id); setActiveBulletinId(newSession.id); }
       setSessions(await repo.listSessions());
@@ -303,20 +378,26 @@ export default function AdminPanel() {
     setEndSessionTarget(null);
   };
 
-  // ── Publish ───────────────────────────────────────────────
+  // ── Telegram: Publish ─────────────────────────────────────
   const publish = () => {
     if (!editing || editingType !== 'session') return;
     showConfirm({
-      title: 'Publish to Telegram?',
-      message: 'Send bulletin to Telegram. This cannot be undone.',
+      title: 'Publish to Telegram?', message: 'Send the full bulletin to Telegram.',
       confirmLabel: 'Publish', confirmColor: '#5c3d1e',
       onConfirm: async () => {
         closeConfirm(); setPublishing(true);
         try {
           const blob = await exporter.export(editing, logoUrl);
-          await telegram.publish(editing, blob);
-          const updated = updateSession(editing, { lastPublished: new Date().toISOString() });
+          setMsg('Sending to Telegram...', 'info');
+          const messageIds = await telegram.publish(editing, blob);
+          const updated = updateSession(editing, {
+            lastPublished: new Date().toISOString(),
+            telegramMessageIds: messageIds,
+            telegramLastSent: new Date().toISOString(),
+          });
           setEditing(updated); await repo.saveSession(updated);
+          setSessions(await repo.listSessions());
+          setDirty(false);
           setMsg('Published!', 'success');
         } catch (e) { setMsg(`Error: ${e.message}`, 'error'); }
         setPublishing(false);
@@ -324,6 +405,77 @@ export default function AdminPanel() {
     });
   };
 
+  // ── Telegram: Re-publish (delete old + send new) ──────────
+  const republish = () => {
+    if (!editing || editingType !== 'session') return;
+    const oldIds = editing.telegramMessageIds ?? [];
+    showConfirm({
+      title: 'Re-publish bulletin?',
+      message: oldIds.length > 0
+        ? `This will delete the ${oldIds.length} previously sent message${oldIds.length > 1 ? 's' : ''} and send an updated bulletin.`
+        : 'Send an updated bulletin to Telegram.',
+      confirmLabel: 'Re-publish', confirmColor: '#b8860b',
+      onConfirm: async () => {
+        closeConfirm(); setPublishing(true);
+        try {
+          if (oldIds.length) {
+            setMsg('Removing old messages...', 'info');
+            const results = await telegram.deleteMessages(oldIds);
+            const failed = results.filter(r => !r.deleted);
+            if (failed.length) console.warn('Some messages could not be deleted:', failed);
+          }
+          setMsg('Generating PDF...', 'info');
+          const blob = await exporter.export(editing, logoUrl);
+          setMsg('Sending updated bulletin...', 'info');
+          const messageIds = await telegram.publish(editing, blob);
+          const updated = updateSession(editing, {
+            lastPublished: new Date().toISOString(),
+            telegramMessageIds: messageIds,
+            telegramLastSent: new Date().toISOString(),
+          });
+          setEditing(updated); await repo.saveSession(updated);
+          setSessions(await repo.listSessions());
+          setDirty(false);
+          setMsg('Re-published!', 'success');
+        } catch (e) { setMsg(`Error: ${e.message}`, 'error'); }
+        setPublishing(false);
+      },
+    });
+  };
+
+  // ── Telegram: Undo (delete sent messages) ─────────────────
+  const undoSend = () => {
+    if (!editing || editingType !== 'session') return;
+    const ids = editing.telegramMessageIds ?? [];
+    if (!ids.length) { setMsg('Nothing to undo', 'info'); return; }
+    showConfirm({
+      title: 'Undo Telegram send?',
+      message: `Delete ${ids.length} message${ids.length > 1 ? 's' : ''} from the Telegram channel? This only works within 48 hours of sending.`,
+      warning: 'Messages older than 48 hours cannot be deleted by the bot.',
+      confirmLabel: 'Delete Messages', confirmColor: '#c0392b',
+      onConfirm: async () => {
+        closeConfirm(); setPublishing(true);
+        try {
+          setMsg('Deleting messages...', 'info');
+          const results = await telegram.deleteMessages(ids);
+          const deleted = results.filter(r => r.deleted).length;
+          const failed = results.filter(r => !r.deleted).length;
+          const updated = updateSession(editing, {
+            telegramMessageIds: [],
+            telegramLastSent: null,
+          });
+          setEditing(updated); await repo.saveSession(updated);
+          setSessions(await repo.listSessions());
+          setDirty(false);
+          if (failed > 0) setMsg(`Deleted ${deleted}, failed ${failed} (may be >48hrs old)`, 'error');
+          else setMsg(`Deleted ${deleted} message${deleted > 1 ? 's' : ''}`, 'success');
+        } catch (e) { setMsg(`Error: ${e.message}`, 'error'); }
+        setPublishing(false);
+      },
+    });
+  };
+
+  // ── Telegram: Announcements only ──────────────────────────
   const publishAnnouncements = async () => {
     if (!editing || editingType !== 'session') return;
     const ann = editing.announcements ?? [];
@@ -351,78 +503,42 @@ export default function AdminPanel() {
         <ConfirmModal {...confirm} onCancel={closeConfirm} />
         <NewSessionWizard open={wizardOpen} templates={templates} onClose={() => setWizardOpen(false)} onCreate={onSessionCreated} />
 
-        {/* End Session Modal */}
         {endSessionTarget && (
-          <div onClick={() => setEndSessionTarget(null)} style={{
-            position: 'fixed', inset: 0, zIndex: 99999, background: 'rgba(0,0,0,0.45)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-          }}>
+          <div onClick={() => setEndSessionTarget(null)} style={{ position: 'fixed', inset: 0, zIndex: 99999, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <style>{`@keyframes slideUp{from{transform:translateY(12px);opacity:0}to{transform:translateY(0);opacity:1}}`}</style>
-            <div onClick={e => e.stopPropagation()} style={{
-              background: '#fff', borderRadius: 20, width: '90%', maxWidth: 440,
-              boxShadow: '0 20px 60px rgba(0,0,0,0.3)', border: '1.5px solid #e8d9c0',
-              animation: 'slideUp 0.2s ease', overflow: 'hidden',
-            }}>
+            <div onClick={e => e.stopPropagation()} style={{ background: '#fff', borderRadius: 20, width: '90%', maxWidth: 440, boxShadow: '0 20px 60px rgba(0,0,0,0.3)', border: '1.5px solid #e8d9c0', animation: 'slideUp 0.2s ease', overflow: 'hidden' }}>
               <div style={{ background: 'linear-gradient(135deg, #2e1a08, #5c3d1e)', padding: '20px 28px' }}>
                 <div style={{ color: '#e67e22', fontSize: 14, fontFamily: 'Playfair Display, serif', fontWeight: 600 }}>End Session</div>
                 <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: 11, marginTop: 2 }}>{endSessionTarget.presetName}</div>
               </div>
               <div style={{ padding: '20px 28px' }}>
-                <div style={{ fontSize: 13, color: '#5c3d1e', marginBottom: 16, lineHeight: 1.6 }}>
-                  What would you like to do with this session?
-                </div>
-
+                <div style={{ fontSize: 13, color: '#5c3d1e', marginBottom: 16, lineHeight: 1.6 }}>What would you like to do with this session?</div>
                 <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
-                  <button onClick={() => setEndSessionMode('restart')} style={{
-                    flex: 1, padding: '14px 14px', borderRadius: 10, cursor: 'pointer', textAlign: 'left',
-                    background: endSessionMode === 'restart' ? '#fdf6ec' : '#fff',
-                    border: endSessionMode === 'restart' ? '1.5px solid #b8860b' : '1.5px solid #e8d9c0',
-                  }}>
+                  <button onClick={() => setEndSessionMode('restart')} style={{ flex: 1, padding: '14px 14px', borderRadius: 10, cursor: 'pointer', textAlign: 'left', background: endSessionMode === 'restart' ? '#fdf6ec' : '#fff', border: endSessionMode === 'restart' ? '1.5px solid #b8860b' : '1.5px solid #e8d9c0' }}>
                     <div style={{ fontSize: 13, fontWeight: 700, color: endSessionMode === 'restart' ? '#b8860b' : '#3d2408' }}>🔄 Restart with new date</div>
                     <div style={{ fontSize: 11, color: '#b0956e', marginTop: 3 }}>Create a new session using the same template with a new week date</div>
                   </button>
-                  <button onClick={() => setEndSessionMode('archive')} style={{
-                    flex: 1, padding: '14px 14px', borderRadius: 10, cursor: 'pointer', textAlign: 'left',
-                    background: endSessionMode === 'archive' ? '#fdf6ec' : '#fff',
-                    border: endSessionMode === 'archive' ? '1.5px solid #b8860b' : '1.5px solid #e8d9c0',
-                  }}>
+                  <button onClick={() => setEndSessionMode('archive')} style={{ flex: 1, padding: '14px 14px', borderRadius: 10, cursor: 'pointer', textAlign: 'left', background: endSessionMode === 'archive' ? '#fdf6ec' : '#fff', border: endSessionMode === 'archive' ? '1.5px solid #b8860b' : '1.5px solid #e8d9c0' }}>
                     <div style={{ fontSize: 13, fontWeight: 700, color: endSessionMode === 'archive' ? '#b8860b' : '#3d2408' }}>✓ Just end it</div>
-                    <div style={{ fontSize: 11, color: '#b0956e', marginTop: 3 }}>Stop presenting this session{activeBulletinId === endSessionTarget.id ? ' (currently live)' : ''}</div>
+                    <div style={{ fontSize: 11, color: '#b0956e', marginTop: 3 }}>Stop presenting{activeBulletinId === endSessionTarget.id ? ' (currently live)' : ''}</div>
                   </button>
                 </div>
-
                 {endSessionMode === 'restart' && (
                   <div style={{ marginBottom: 16 }}>
                     <div style={{ fontSize: 11, color: '#b0956e', fontWeight: 600, marginBottom: 6 }}>New week date</div>
-                    <input type="date" value={endSessionDate} onChange={e => setEndSessionDate(e.target.value)} autoFocus
-                      style={{ width: '100%', fontSize: 14, padding: '10px 12px', border: '1.5px solid #e0cba8', borderRadius: 8, background: '#fdf6ec', color: '#5c3d1e', outline: 'none', boxSizing: 'border-box' }} />
-                    {endSessionTarget.templateId && (
-                      <div style={{ fontSize: 10, color: '#27ae60', marginTop: 6 }}>✓ Will use the original template — all events and structure will carry over with new dates</div>
-                    )}
-                    {!endSessionTarget.templateId && (
-                      <div style={{ fontSize: 10, color: '#b0956e', marginTop: 6 }}>No linked template — will recreate from the current session structure</div>
-                    )}
+                    <input type="date" value={endSessionDate} onChange={e => setEndSessionDate(e.target.value)} autoFocus style={{ width: '100%', fontSize: 14, padding: '10px 12px', border: '1.5px solid #e0cba8', borderRadius: 8, background: '#fdf6ec', color: '#5c3d1e', outline: 'none', boxSizing: 'border-box' }} />
+                    {endSessionTarget.templateId && <div style={{ fontSize: 10, color: '#27ae60', marginTop: 6 }}>✓ Will use the original template</div>}
+                    {!endSessionTarget.templateId && <div style={{ fontSize: 10, color: '#b0956e', marginTop: 6 }}>No linked template — will recreate from current session</div>}
                   </div>
                 )}
-
                 {endSessionMode === 'archive' && activeBulletinId === endSessionTarget.id && (
-                  <div style={{ fontSize: 11, color: '#c0392b', background: '#fdf0ed', padding: '10px 14px', borderRadius: 8, border: '1px solid #f5c6cb', marginBottom: 16 }}>
-                    ⚠️ This session is currently being presented. Ending it will clear the presentation screen.
-                  </div>
+                  <div style={{ fontSize: 11, color: '#c0392b', background: '#fdf0ed', padding: '10px 14px', borderRadius: 8, border: '1px solid #f5c6cb', marginBottom: 16 }}>⚠️ This session is currently being presented. Ending it will clear the screen.</div>
                 )}
-
                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
                   <button onClick={() => setEndSessionTarget(null)} style={{ padding: '8px 18px', background: '#f4ece0', border: '1px solid #e0cba8', borderRadius: 8, fontSize: 13, color: '#5c3d1e', cursor: 'pointer' }}>Cancel</button>
-                  <button
-                    onClick={confirmEndSession}
-                    disabled={endSessionMode === 'restart' && !endSessionDate}
-                    style={{
-                      padding: '8px 22px',
-                      background: (endSessionMode === 'archive' || endSessionDate) ? '#e67e22' : '#ccc',
-                      color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600,
-                      cursor: (endSessionMode === 'archive' || endSessionDate) ? 'pointer' : 'default',
-                    }}
-                  >{endSessionMode === 'restart' ? 'Restart Session' : 'End Session'}</button>
+                  <button onClick={confirmEndSession} disabled={endSessionMode === 'restart' && !endSessionDate} style={{ padding: '8px 22px', background: (endSessionMode === 'archive' || endSessionDate) ? '#e67e22' : '#ccc', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: (endSessionMode === 'archive' || endSessionDate) ? 'pointer' : 'default' }}>
+                    {endSessionMode === 'restart' ? 'Restart Session' : 'End Session'}
+                  </button>
                 </div>
               </div>
             </div>
@@ -448,27 +564,20 @@ export default function AdminPanel() {
         </div>
 
         <div style={{ maxWidth: 960, margin: '0 auto', padding: '24px 32px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24, alignItems: 'start' }}>
-          {/* Sessions */}
           <div>
             <div style={{ fontSize: 13, fontWeight: 700, color: '#5c3d1e', textTransform: 'uppercase', letterSpacing: 2, marginBottom: 14 }}>Sessions ({sessions.length})</div>
             {sessions.length === 0 && <div style={{ color: '#c4a882', fontSize: 14, padding: '20px 0' }}>No sessions yet.</div>}
             {sessions.map(s => (
               <SummaryCard key={s.id} item={s} isActive={activeBulletinId === s.id}
-                onEdit={() => openEditor(s, 'session')}
-                onPresent={() => setAsPresentation(s.id)}
-                onDelete={() => deleteItem(s, 'session')}
-                onEndSession={() => handleEndSession(s)} />
+                onEdit={() => openEditor(s, 'session')} onPresent={() => setAsPresentation(s.id)}
+                onDelete={() => deleteItem(s, 'session')} onEndSession={() => handleEndSession(s)} />
             ))}
           </div>
-
-          {/* Templates */}
           <div>
             <div style={{ fontSize: 13, fontWeight: 700, color: '#5c3d1e', textTransform: 'uppercase', letterSpacing: 2, marginBottom: 14 }}>Templates ({templates.length})</div>
-            {templates.length === 0 && <div style={{ color: '#c4a882', fontSize: 14, padding: '20px 0' }}>No templates yet. Save a session as template to reuse it.</div>}
+            {templates.length === 0 && <div style={{ color: '#c4a882', fontSize: 14, padding: '20px 0' }}>No templates yet.</div>}
             {templates.map(t => (
-              <SummaryCard key={t.id} item={t} isTemplate
-                onEdit={() => openEditor(t, 'template')}
-                onDelete={() => deleteItem(t, 'template')} />
+              <SummaryCard key={t.id} item={t} isTemplate onEdit={() => openEditor(t, 'template')} onDelete={() => deleteItem(t, 'template')} />
             ))}
           </div>
         </div>
@@ -480,10 +589,7 @@ export default function AdminPanel() {
   // EDIT MODE
   // ══════════════════════════════════════════════════════════
   const editorName = editing.presetName ?? editing.name ?? 'Untitled';
-  const setEditorName = v => {
-    if (isSession) updateEditing({ presetName: v });
-    else updateEditing({ name: v });
-  };
+  const setEditorName = v => { if (isSession) updateEditing({ presetName: v }); else updateEditing({ name: v }); };
 
   return (
     <DragProvider onDrop={handleDrop} onSort={handleSort} onEventReorder={handleEventReorder}>
@@ -572,14 +678,6 @@ export default function AdminPanel() {
                   {activeBulletinId === editing.id ? 'Presenting' : '📺 Present'}
                 </button>
               )}
-              {isSession && (
-                <button onClick={publishAnnouncements} disabled={publishing} style={{ padding: '7px 14px', background: publishing ? '#ccc' : 'linear-gradient(135deg, #1a5276, #2980b9)', color: '#fff', border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: publishing ? 'default' : 'pointer' }}>📢</button>
-              )}
-              {isSession && (
-                <button onClick={publish} disabled={publishing} style={{ padding: '7px 18px', background: publishing ? '#ccc' : 'linear-gradient(135deg, #3d2408, #5c3d1e)', color: '#fff', border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: publishing ? 'default' : 'pointer' }}>
-                  {publishing ? '...' : '📤 Publish'}
-                </button>
-              )}
               {status && <span style={{ fontSize: 12, color: statusColor, fontWeight: 500 }}>{status}</span>}
             </div>
           </div>
@@ -599,6 +697,18 @@ export default function AdminPanel() {
 
           {/* Content */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+            {/* Telegram Controls */}
+            {isSession && (
+              <TelegramBar
+                session={editing}
+                publishing={publishing}
+                onPublish={publish}
+                onRepublish={republish}
+                onUndo={undoSend}
+                onPublishAnnouncements={publishAnnouncements}
+              />
+            )}
+
             {/* Header Notes */}
             <div style={{ background: '#fff', borderRadius: 16, border: '1.5px solid #e8d9c0', padding: '18px 24px', boxShadow: '0 1px 8px rgba(92,61,30,0.07)' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
