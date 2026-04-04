@@ -5,11 +5,11 @@ import { CHURCH_NAME } from '../../core/domain/Bulletin';
 const repo = new FirebaseBulletinRepo();
 
 function dur(s) {
-  const b = 8500, p = 3200;
+  const b = 2000, p = 1200;
   if (s.type === 'day') return b + (s.data.events?.length ?? 0) * p;
   if (s.type === 'ann') return b + (s.data.length ?? 0) * p;
   if (s.type === 'multi') return b + (s.data.length ?? 0) * p;
-  if (s.type === 'img') return 9000;
+  if (s.type === 'img') return 5000;
   return b;
 }
 
