@@ -20,6 +20,7 @@ jobs:
           VITE_TELEGRAM_CHAT_ID_TEST: ${{ secrets.VITE_TELEGRAM_CHAT_ID_TEST }}
           VITE_TELEGRAM_CHAT_ID_REAL: ${{ secrets.VITE_TELEGRAM_CHAT_ID_REAL }}
           VITE_TELEGRAM_USE_REAL: ${{ secrets.VITE_TELEGRAM_USE_REAL }}
+          VITE_ADMIN_PASSCODE: ${{ secrets.VITE_ADMIN_PASSCODE }}
       - uses: FirebaseExtended/action-hosting-deploy@v0
         with:
           repoToken: ${{ secrets.GITHUB_TOKEN }}
