@@ -5,7 +5,7 @@ export class TelegramAdapter extends NotificationPort {
   constructor() {
     super();
     this.token = import.meta.env.VITE_TELEGRAM_BOT_TOKEN;
-    this.chatId = import.meta.env.VITE_TELEGRAM_USE_REAL === 'true'
+    this.chatId = import.meta.env.VITE_TELEGRAM_USE_REAL === 'false'
       ? import.meta.env.VITE_TELEGRAM_CHAT_ID_REAL
       : import.meta.env.VITE_TELEGRAM_CHAT_ID_TEST;
     this.base = `https://api.telegram.org/bot${this.token}`;
