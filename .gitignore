@@ -26,4 +26,4 @@ dist-ssr
 
 .firebase/
 .claude/
-.agents/
+.agents/.env
