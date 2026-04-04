@@ -5,35 +5,72 @@ import { BulletinRepository } from '../../core/ports/BulletinRepository';
 export class FirebaseBulletinRepo extends BulletinRepository {
   constructor() {
     super();
-    this.col = collection(db, 'bulletins');
+    this.sessions = collection(db, 'bulletins');
+    this.templates = collection(db, 'bulletinTemplates');
   }
 
-  async save(bulletin) {
-    const ref = doc(this.col, bulletin.id);
-    await setDoc(ref, bulletin);
-    return bulletin;
+  // ── Sessions ────────────────────────────────────────────────
+  async saveSession(session) {
+    await setDoc(doc(this.sessions, session.id), session);
+    return session;
   }
 
-  async load(id) {
-    const ref = doc(this.col, id);
-    const snap = await getDoc(ref);
-    if (!snap.exists()) throw new Error(`Bulletin ${id} not found`);
+  async loadSession(id) {
+    const snap = await getDoc(doc(this.sessions, id));
+    if (!snap.exists()) throw new Error(`Session ${id} not found`);
     return snap.data();
   }
 
-  async listPresets() {
-    const snap = await getDocs(this.col);
+  async listSessions() {
+    const snap = await getDocs(this.sessions);
     return snap.docs.map(d => d.data()).sort((a, b) =>
       new Date(b.updatedAt) - new Date(a.updatedAt)
     );
   }
 
-  async delete(id) {
-    await deleteDoc(doc(this.col, id));
+  async deleteSession(id) {
+    await deleteDoc(doc(this.sessions, id));
   }
 
-  async setActive(bulletinId) {
-    await setDoc(doc(db, 'config', 'active_bulletin'), { id: bulletinId });
+  onSessionChange(id, onChange) {
+    return onSnapshot(doc(this.sessions, id), snap => {
+      if (!snap.exists()) return onChange(null);
+      onChange(snap.data());
+    });
+  }
+
+  // Legacy compat
+  async save(b) { return this.saveSession(b); }
+  async load(id) { return this.loadSession(id); }
+  async listPresets() { return this.listSessions(); }
+  async delete(id) { return this.deleteSession(id); }
+
+  // ── Templates ───────────────────────────────────────────────
+  async saveTemplate(template) {
+    await setDoc(doc(this.templates, template.id), template);
+    return template;
+  }
+
+  async loadTemplate(id) {
+    const snap = await getDoc(doc(this.templates, id));
+    if (!snap.exists()) throw new Error(`Template ${id} not found`);
+    return snap.data();
+  }
+
+  async listTemplates() {
+    const snap = await getDocs(this.templates);
+    return snap.docs.map(d => d.data()).sort((a, b) =>
+      new Date(b.updatedAt) - new Date(a.updatedAt)
+    );
+  }
+
+  async deleteTemplate(id) {
+    await deleteDoc(doc(this.templates, id));
+  }
+
+  // ── Active presentation ─────────────────────────────────────
+  async setActive(sessionId) {
+    await setDoc(doc(db, 'config', 'active_bulletin'), { id: sessionId });
   }
 
   async getActive() {
@@ -42,9 +79,6 @@ export class FirebaseBulletinRepo extends BulletinRepository {
     return snap.data().id;
   }
 
-  /** Realtime listener on the active bulletin config doc.
-   *  Calls onChange(bulletinId) whenever the active bulletin changes.
-   *  Returns an unsubscribe function. */
   onActiveChange(onChange) {
     return onSnapshot(doc(db, 'config', 'active_bulletin'), snap => {
       if (!snap.exists()) return onChange(null);
@@ -52,16 +86,14 @@ export class FirebaseBulletinRepo extends BulletinRepository {
     });
   }
 
-  /** Realtime listener on a specific bulletin document.
-   *  Calls onChange(bulletinData) whenever the document updates.
-   *  Returns an unsubscribe function. */
   onBulletinChange(id, onChange) {
-    return onSnapshot(doc(this.col, id), snap => {
+    return onSnapshot(doc(this.sessions, id), snap => {
       if (!snap.exists()) return onChange(null);
       onChange(snap.data());
     });
   }
 
+  // ── Logo ────────────────────────────────────────────────────
   async setLogo(url) {
     await setDoc(doc(db, 'config', 'church_logo'), { url });
   }
