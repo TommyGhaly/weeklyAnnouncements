@@ -99,7 +99,7 @@ function DaySlide({ data, h }) {
                 {showNotes && ev.notes && <div style={{ fontSize: noteSize, color: '#7a6e50', lineHeight: 1.3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{ev.notes}</div>}
                 {showContacts && (ev.contacts ?? []).length > 0 && <div style={{ display: 'flex', gap: 12, flexWrap: 'nowrap', overflow: 'hidden' }}>{ev.contacts.slice(0, 2).map((ct, j) => <span key={j} style={{ fontSize: noteSize * 0.9, color: '#6a5e42', whiteSpace: 'nowrap' }}>{ct.name}{ct.phone && <span style={{ color: c, fontWeight: 700, marginLeft: 4 }}>{ct.phone}</span>}</span>)}</div>}
               </div>
-              {(ev.time || ev.timeTo) && <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', justifyContent: 'center', padding: `${pad * 0.5}px ${pad * 0.8}px`, flexShrink: 0, borderLeft: '1px solid rgba(255,255,255,0.04)' }}>
+              {(ev.time || ev.timeTo) && <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', justifyContent: 'center', padding: `${pad * 0.5}px ${pad * 0.8}px`, flexShrink: 0 }}>
                 {ev.time && <div style={{ fontSize: timeSize, fontWeight: 800, color: c, fontFamily: "'Georgia',serif", whiteSpace: 'nowrap', lineHeight: 1 }}>{ev.time}</div>}
                 {ev.timeTo && <div style={{ fontSize: timeSize * 0.72, fontWeight: 600, color: `${c}77`, fontFamily: "'Georgia',serif", whiteSpace: 'nowrap', lineHeight: 1, marginTop: 1 }}>{ev.timeTo}</div>}
               </div>}
