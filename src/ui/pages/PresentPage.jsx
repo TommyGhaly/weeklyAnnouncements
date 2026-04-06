@@ -7,12 +7,12 @@ const repo = new FirebaseBulletinRepo();
 
 function buildSlides(b) {
   const s = [];
-  for (const img of b.slideImages ?? []) if (img.url) s.push({ type: 'img', data: img });
+  (b.days ?? []).filter(d => d.events?.length).forEach(d => s.push({ type: 'day', data: d }));
   const md = b.multiDayEvents ?? [];
   if (md.length) s.push({ type: 'multi', data: md });
   const ann = (b.announcements ?? []).filter(a => a.text?.trim());
   if (ann.length) s.push({ type: 'ann', data: ann });
-  (b.days ?? []).filter(d => d.events?.length).forEach(d => s.push({ type: 'day', data: d }));
+  for (const img of b.slideImages ?? []) if (img.url) s.push({ type: 'img', data: img });
   return s;
 }
 
@@ -380,10 +380,9 @@ export default function PresentPage() {
         background: t.bg, color: t.text,
         userSelect: 'none', overflow: 'hidden',
         fontFamily: "'Inter',sans-serif", position: 'relative',
-        outline: config.devMode ? '4px solid #22c55e' : 'none',
-        outlineOffset: config.devMode ? '-4px' : 0,
       }}
     >
+      {config.devMode && <div style={{ position: 'fixed', inset: 0, border: '4px solid #22c55e', pointerEvents: 'none', zIndex: 99999 }} />}
       <CrossBackground t={t} />
       <style>{CSS}</style>
 

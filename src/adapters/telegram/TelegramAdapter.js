@@ -46,14 +46,40 @@ export class TelegramAdapter extends NotificationPort {
   async publishAnnouncements(bulletin) {
     const anns = (bulletin.announcements ?? []).filter(a => a.text?.trim());
     if (!anns.length) return [];
-    const lines = [
-      `✝ *${CHURCH_NAME}*`,
-      ``,
-      `📢 *Announcements*`,
-      ``,
-      ...anns.map(a => `• ${a.text}`),
-    ];
-    return this._sendLongMessage(lines.join('\n'));
+    const ids = [];
+
+    // Announcements with images: send as photo+caption (no repeat in text block)
+    const withImage    = anns.filter(a => a.image);
+    const withoutImage = anns.filter(a => !a.image);
+
+    for (const a of withImage) {
+      const caption = `• ${a.text}`;
+      if (caption.length <= 1024) {
+        const id = await this._sendPhoto(a.image, caption);
+        if (id) ids.push(id);
+      } else {
+        // Photo with truncated caption + full text as follow-up message
+        const id = await this._sendPhoto(a.image, caption.slice(0, 1021) + '…');
+        if (id) ids.push(id);
+        const tid = await this._sendMessage(caption);
+        if (tid) ids.push(tid);
+      }
+    }
+
+    // Text-only announcements go in one message block
+    if (withoutImage.length) {
+      const lines = [
+        `✝ *${CHURCH_NAME}*`,
+        ``,
+        `📢 *Announcements*`,
+        ``,
+        ...withoutImage.map(a => `• ${a.text}`),
+      ];
+      const textIds = await this._sendLongMessage(lines.join('\n'));
+      ids.push(...textIds);
+    }
+
+    return ids;
   }
 
   // ─── SEND HELPERS ──────────────────────────────────────────

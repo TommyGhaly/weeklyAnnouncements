@@ -85,11 +85,13 @@ function SummaryCard({ item, isActive, isTemplate, onEdit, onPresent, onDelete, 
 }
 
 // ── Telegram Status Bar ───────────────────────────────────────
-function TelegramBar({ session, publishing, devMode, onPublish, onRepublish, onUndo, onPublishAnnouncements }) {
-  const ids     = session?.telegramMessageIds ?? [];
-  const hasSent = ids.length > 0;
-  const lastPub = session?.lastPublished ?? session?.telegramLastSent;
-  const lastAnn = session?.lastAnnouncementsSent;
+function TelegramBar({ session, publishing, devMode, onPublish, onRepublish, onUndo, onPublishAnnouncements, onUndoAnnouncements }) {
+  const ids        = session?.telegramMessageIds ?? [];
+  const annIds     = session?.telegramAnnouncementIds ?? [];
+  const hasSent    = ids.length > 0;
+  const hasAnnSent = annIds.length > 0;
+  const lastPub    = session?.lastPublished ?? session?.telegramLastSent;
+  const lastAnn    = session?.lastAnnouncementsSent;
 
   return (
     <div style={{
@@ -161,6 +163,15 @@ function TelegramBar({ session, publishing, devMode, onPublish, onRepublish, onU
         }}>
           📢 Announcements Only
         </button>
+        {hasAnnSent && (
+          <button onClick={onUndoAnnouncements} disabled={publishing} style={{
+            padding: '8px 16px', background: 'none', border: '1.5px solid #2980b9',
+            borderRadius: 8, fontSize: 12, fontWeight: 600, color: '#2980b9',
+            cursor: publishing ? 'default' : 'pointer',
+          }}>
+            🗑 Undo Announcements
+          </button>
+        )}
       </div>
 
       {hasSent && (
@@ -479,12 +490,40 @@ export default function AdminPanel() {
     setPublishing(true);
     try {
       const adapter = await TelegramAdapter.create();
-      await adapter.publishAnnouncements(editing);
-      const updated = updateSession(editing, { lastAnnouncementsSent: new Date().toISOString() });
+      const ids = await adapter.publishAnnouncements(editing);
+      const updated = updateSession(editing, {
+        lastAnnouncementsSent: new Date().toISOString(),
+        telegramAnnouncementIds: ids,
+      });
       setEditing(updated); await repo.saveSession(updated);
       setMsg('Announcements sent!', 'success');
     } catch (e) { setMsg(`Error: ${e.message}`, 'error'); }
     setPublishing(false);
+  };
+
+  const undoAnnouncements = () => {
+    if (!editing || editingType !== 'session') return;
+    const ids = editing.telegramAnnouncementIds ?? [];
+    if (!ids.length) { setMsg('Nothing to undo', 'info'); return; }
+    showConfirm({
+      title: 'Undo announcements?',
+      message: `Delete ${ids.length} announcement message${ids.length > 1 ? 's' : ''} from Telegram?`,
+      warning: 'Messages older than 48 hours cannot be deleted by the bot.',
+      confirmLabel: 'Delete Messages', confirmColor: '#c0392b',
+      onConfirm: async () => {
+        closeConfirm(); setPublishing(true);
+        try {
+          const adapter = await TelegramAdapter.create();
+          const results = await adapter.deleteMessages(ids);
+          const deleted = results.filter(r => r.deleted).length;
+          const failed  = results.filter(r => !r.deleted).length;
+          const updated = updateSession(editing, { telegramAnnouncementIds: [], lastAnnouncementsSent: null });
+          setEditing(updated); await repo.saveSession(updated);
+          setMsg(failed > 0 ? `Deleted ${deleted}, failed ${failed}` : `Deleted ${deleted} message${deleted > 1 ? 's' : ''}`, failed > 0 ? 'error' : 'success');
+        } catch (e) { setMsg(`Error: ${e.message}`, 'error'); }
+        setPublishing(false);
+      },
+    });
   };
 
   const statusColor = { success: '#27ae60', error: '#c0392b', info: '#7a6352' }[statusType];
@@ -495,7 +534,8 @@ export default function AdminPanel() {
   // ══════════════════════════════════════════════════════════
   if (!editing) {
     return (
-      <div style={{ minHeight: '100vh', background: '#f4ece0', fontFamily: 'Inter, sans-serif', outline: config.devMode ? '4px solid #22c55e' : 'none', outlineOffset: config.devMode ? '-4px' : 0 }}>
+      <div style={{ minHeight: '100vh', background: '#f4ece0', fontFamily: 'Inter, sans-serif' }}>
+        {config.devMode && <div style={{ position: 'fixed', inset: 0, border: '4px solid #22c55e', pointerEvents: 'none', zIndex: 99999 }} />}
         <ConfirmModal {...confirm} onCancel={closeConfirm} />
         <NewSessionWizard open={wizardOpen} templates={templates} onClose={() => setWizardOpen(false)} onCreate={onSessionCreated} />
 
@@ -592,7 +632,8 @@ export default function AdminPanel() {
 
   return (
     <DragProvider onDrop={handleDrop} onSort={handleSort} onEventReorder={handleEventReorder}>
-      <div style={{ minHeight: '100vh', background: '#f4ece0', fontFamily: 'Inter, sans-serif', outline: config.devMode ? '4px solid #22c55e' : 'none', outlineOffset: config.devMode ? '-4px' : 0 }}>
+      <div style={{ minHeight: '100vh', background: '#f4ece0', fontFamily: 'Inter, sans-serif' }}>
+        {config.devMode && <div style={{ position: 'fixed', inset: 0, border: '4px solid #22c55e', pointerEvents: 'none', zIndex: 99999 }} />}
         <ConfirmModal {...confirm} onCancel={closeConfirm} />
         <SaveTemplateModal open={saveTemplateOpen} defaultName={editorName} sourceTemplateId={editing.templateId} templates={templates} onSave={handleSaveAsTemplate} onClose={() => setSaveTemplateOpen(false)} />
 
@@ -709,6 +750,7 @@ export default function AdminPanel() {
                 onRepublish={republish}
                 onUndo={undoSend}
                 onPublishAnnouncements={publishAnnouncements}
+                onUndoAnnouncements={undoAnnouncements}
               />
             )}
 
