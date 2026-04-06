@@ -5,7 +5,19 @@ import { useAppConfig } from '../../hooks/useAppConfig';
 
 const repo = new FirebaseBulletinRepo();
 
+<<<<<<< HEAD
 /* ── slide order: images → multi-day → announcements → days ── */
+=======
+function dur(s) {
+  const b = 2000, p = 1200;
+  if (s.type === 'day') return b + (s.data.events?.length ?? 0) * p;
+  if (s.type === 'ann') return b + (s.data.length ?? 0) * p;
+  if (s.type === 'multi') return b + (s.data.length ?? 0) * p;
+  if (s.type === 'img') return 5000;
+  return b;
+}
+
+>>>>>>> refs/remotes/origin/main
 function buildSlides(b) {
   const s = [];
   for (const img of b.slideImages ?? []) if (img.url) s.push({ type: 'img', data: img });
