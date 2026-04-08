@@ -2,35 +2,15 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { FirebaseBulletinRepo } from '../../adapters/firebase/FirebaseBulletinRepo';
 import { CHURCH_NAME } from '../../core/domain/Bulletin';
 import { useAppConfig } from '../../hooks/useAppConfig';
+import { buildSlides, slideDurationMs } from '../../utils/slideUtils';
 
 const repo = new FirebaseBulletinRepo();
-
-function buildSlides(b) {
-  const s = [];
-  (b.days ?? []).filter(d => d.events?.length).forEach(d => s.push({ type: 'day', data: d }));
-  const md = b.multiDayEvents ?? [];
-  if (md.length) s.push({ type: 'multi', data: md });
-  const ann = (b.announcements ?? []).filter(a => a.text?.trim());
-  if (ann.length) s.push({ type: 'ann', data: ann });
-  for (const img of b.slideImages ?? []) if (img.url) s.push({ type: 'img', data: img });
-  return s;
-}
-
-function dur(s) {
-  const b = 2000, p = 1200;
-  if (s.type === 'day')   return b + (s.data.events?.length ?? 0) * p;
-  if (s.type === 'ann')   return b + (s.data.length ?? 0) * p;
-  if (s.type === 'multi') return b + (s.data.length ?? 0) * p;
-  if (s.type === 'img')   return 5000;
-  return b;
-}
 
 function fmtD(iso, o) {
   if (!iso) return '';
   try { return new Date(iso + 'T00:00:00').toLocaleDateString('en-US', o); } catch { return iso; }
 }
 
-/* ── Smart multi-day section label ── */
 const DAY_NAMES = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
 function dayName(iso) { return DAY_NAMES[new Date(iso + 'T12:00:00').getDay()]; }
 function multiDayLabel(events) {
@@ -44,52 +24,21 @@ function multiDayLabel(events) {
   return 'Upcoming';
 }
 
-/* ── Themes ── */
 function mkTheme(light) {
   return light ? {
-    bg:          '#f0e8d4',
-    headerBg:    '#e8dcc4',
-    headerBorder:'rgba(0,0,0,0.08)',
-    footerBorder:'rgba(0,0,0,0.08)',
-    churchName:  'rgba(0,0,0,0.3)',
-    headerNote:  'rgba(0,0,0,0.25)',
-    text:        '#1a1208',
-    textMuted:   '#3d2c14',
-    textFaint:   '#7a5c30',
-    cardBg:      'rgba(0,0,0,0.04)',
-    dotInactive: 'rgba(0,0,0,0.1)',
-    ctrlBg:      'rgba(0,0,0,0.04)',
-    ctrlBorder:  'rgba(0,0,0,0.1)',
-    ctrlColor:   'rgba(0,0,0,0.3)',
-    progressBg:  'rgba(0,0,0,0.06)',
-    gold:        '#8a6a00',
-    blue:        '#1a4a7a',
-    purple:      '#5a3a8a',
-    patternInvert: false,
-    noActiveBg:  'rgba(0,0,0,0.04)',
-    noActiveText:'rgba(0,0,0,0.15)',
+    bg: '#f0e8d4', headerBg: '#e8dcc4', headerBorder: 'rgba(0,0,0,0.08)', footerBorder: 'rgba(0,0,0,0.08)',
+    churchName: 'rgba(0,0,0,0.3)', headerNote: 'rgba(0,0,0,0.25)', text: '#1a1208', textMuted: '#3d2c14',
+    textFaint: '#7a5c30', cardBg: 'rgba(0,0,0,0.04)', dotInactive: 'rgba(0,0,0,0.1)',
+    ctrlBg: 'rgba(0,0,0,0.04)', ctrlBorder: 'rgba(0,0,0,0.1)', ctrlColor: 'rgba(0,0,0,0.3)',
+    progressBg: 'rgba(0,0,0,0.06)', gold: '#8a6a00', blue: '#1a4a7a', purple: '#5a3a8a',
+    patternInvert: false, noActiveBg: 'rgba(0,0,0,0.04)', noActiveText: 'rgba(0,0,0,0.15)',
   } : {
-    bg:          '#0c0a06',
-    headerBg:    'transparent',
-    headerBorder:'rgba(255,255,255,0.04)',
-    footerBorder:'rgba(255,255,255,0.04)',
-    churchName:  'rgba(255,255,255,0.3)',
-    headerNote:  'rgba(255,255,255,0.2)',
-    text:        '#f0e8d4',
-    textMuted:   '#7a6e50',
-    textFaint:   '#6a5e42',
-    cardBg:      'rgba(255,255,255,0.04)',
-    dotInactive: 'rgba(255,255,255,0.06)',
-    ctrlBg:      'rgba(255,255,255,0.03)',
-    ctrlBorder:  'rgba(255,255,255,0.06)',
-    ctrlColor:   'rgba(255,255,255,0.2)',
-    progressBg:  'rgba(255,255,255,0.03)',
-    gold:        '#c9a050',
-    blue:        '#5a8ab4',
-    purple:      '#8a6ab4',
-    patternInvert: true,
-    noActiveBg:  'transparent',
-    noActiveText:'rgba(255,255,255,0.1)',
+    bg: '#0c0a06', headerBg: 'transparent', headerBorder: 'rgba(255,255,255,0.04)', footerBorder: 'rgba(255,255,255,0.04)',
+    churchName: 'rgba(255,255,255,0.3)', headerNote: 'rgba(255,255,255,0.2)', text: '#f0e8d4', textMuted: '#7a6e50',
+    textFaint: '#6a5e42', cardBg: 'rgba(255,255,255,0.04)', dotInactive: 'rgba(255,255,255,0.06)',
+    ctrlBg: 'rgba(255,255,255,0.03)', ctrlBorder: 'rgba(255,255,255,0.06)', ctrlColor: 'rgba(255,255,255,0.2)',
+    progressBg: 'rgba(255,255,255,0.03)', gold: '#c9a050', blue: '#5a8ab4', purple: '#8a6ab4',
+    patternInvert: true, noActiveBg: 'transparent', noActiveText: 'rgba(255,255,255,0.1)',
   };
 }
 
@@ -101,8 +50,7 @@ function CrossBackground({ t }) {
       position: 'absolute', inset: 0, overflow: 'hidden', pointerEvents: 'none', zIndex: 0,
       backgroundImage: `url(${COPTIC_PATTERN_URL})`,
       backgroundSize: '500px auto', backgroundRepeat: 'repeat', backgroundPosition: '0 -10px',
-      opacity: 0.06,
-      filter: t.patternInvert ? 'invert(1)' : 'none',
+      opacity: 0.06, filter: t.patternInvert ? 'invert(1)' : 'none',
     }} />
   );
 }
@@ -123,21 +71,18 @@ function TitleBar({ color }) {
   );
 }
 
-/* ═══ DAY ═══ */
 function DaySlide({ data, h, t }) {
   const evts = data.events ?? [];
   const n = evts.length;
   const dt = fmtD(data.date, { weekday: 'long', month: 'long', day: 'numeric' });
-  const titleH = 90;
-  const bodyH = h - titleH;
-  const gap = Math.max(2, Math.min(8, Math.floor(bodyH / Math.max(n,1) / 8)));
+  const titleH = 90, bodyH = h - titleH;
+  const gap = Math.max(2, Math.min(8, Math.floor(bodyH / Math.max(n, 1) / 8)));
   const cardH = n > 0 ? Math.floor((bodyH - gap * (n - 1)) / n) : bodyH;
   const nameSize = Math.min(48, Math.max(13, cardH * 0.35));
   const timeSize = Math.min(38, Math.max(11, cardH * 0.28));
   const noteSize = Math.min(15, Math.max(9,  cardH * 0.12));
   const pad = Math.min(20, Math.max(3, cardH * 0.12));
-  const showNotes    = cardH > 60;
-  const showContacts = cardH > 80;
+  const showNotes = cardH > 60, showContacts = cardH > 80;
 
   return (
     <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', padding: '16px 64px 12px', boxSizing: 'border-box', overflow: 'hidden' }}>
@@ -182,12 +127,10 @@ function DaySlide({ data, h, t }) {
   );
 }
 
-/* ═══ ANNOUNCEMENTS ═══ */
 function AnnSlide({ data, h, t }) {
   const n = data.length;
-  const titleH = 90;
-  const bodyH = h - titleH;
-  const gap = Math.max(2, Math.min(8, Math.floor(bodyH / Math.max(n,1) / 8)));
+  const titleH = 90, bodyH = h - titleH;
+  const gap = Math.max(2, Math.min(8, Math.floor(bodyH / Math.max(n, 1) / 8)));
   const rowH = n > 0 ? Math.floor((bodyH - gap * (n - 1)) / n) : bodyH;
   const fontSize = Math.min(36, Math.max(12, rowH * 0.3));
   const barW = Math.max(3, Math.min(5, rowH * 0.04));
@@ -211,13 +154,11 @@ function AnnSlide({ data, h, t }) {
   );
 }
 
-/* ═══ MULTI-DAY ═══ */
 function MultiSlide({ data, h, t }) {
   const n = data.length;
   const label = multiDayLabel(data);
-  const titleH = 70;
-  const bodyH = h - titleH;
-  const gap = Math.max(2, Math.min(8, Math.floor(bodyH / Math.max(n,1) / 8)));
+  const titleH = 70, bodyH = h - titleH;
+  const gap = Math.max(2, Math.min(8, Math.floor(bodyH / Math.max(n, 1) / 8)));
   const cardH = n > 0 ? Math.floor((bodyH - gap * (n - 1)) / n) : bodyH;
   const nameSize = Math.min(44, Math.max(13, cardH * 0.28));
   const pad = Math.min(18, Math.max(3, cardH * 0.1));
@@ -264,7 +205,6 @@ function MultiSlide({ data, h, t }) {
   );
 }
 
-/* ═══ IMAGE ═══ */
 function ImgSlide({ data, t }) {
   return (
     <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '32px 64px', boxSizing: 'border-box', overflow: 'hidden' }}>
@@ -285,12 +225,11 @@ function RenderSlide({ slide, h, t }) {
   return null;
 }
 
-/* ════════════════════════════════════════════
-   MAIN
-   ════════════════════════════════════════════ */
 export default function PresentPage() {
   const { config } = useAppConfig();
-  const t = mkTheme(config.lightMode);
+  const t        = mkTheme(config.lightMode);
+  const baseline    = config.slideBaseline    ?? 10;
+  const multiplier  = config.slideMultiplier  ?? 0.4;
 
   const [bulletin, setBulletin] = useState(null);
   const [index,    setIndex]    = useState(0);
@@ -329,11 +268,11 @@ export default function PresentPage() {
     return () => document.removeEventListener('fullscreenchange', h);
   }, []);
 
-  const fs = () => { if (!document.fullscreenElement) cRef.current?.requestFullscreen(); else document.exitFullscreen(); };
-  const slides = useMemo(() => bulletin ? buildSlides(bulletin) : [], [bulletin]);
-  const total  = slides.length;
+  const fs     = () => { if (!document.fullscreenElement) cRef.current?.requestFullscreen(); else document.exitFullscreen(); };
+  const slides  = useMemo(() => bulletin ? buildSlides(bulletin) : [], [bulletin]);
+  const total   = slides.length;
 
-  /* image preload */
+  /* preload next slide images */
   useEffect(() => {
     if (!total) return;
     const nx = slides[(index + 1) % total];
@@ -349,15 +288,16 @@ export default function PresentPage() {
   const next = useCallback(() => { if (total) goTo((index + 1) % total); }, [index, total, goTo]);
   const prev = useCallback(() => { if (index > 0) goTo(index - 1); }, [index, goTo]);
 
+  /* timer — reads slideDurationMs which respects overrides + baseline */
   useEffect(() => {
     if (!bulletin || paused || !total) return;
-    const d = dur(slides[index]);
+    const d = slideDurationMs(slides[index], bulletin, baseline, multiplier);
     setProgress(0); sRef.current = Date.now();
     clearInterval(pRef.current); clearTimeout(tRef.current);
     pRef.current = setInterval(() => setProgress(Math.min(((Date.now() - sRef.current) / d) * 100, 100)), 50);
     tRef.current = setTimeout(() => { clearInterval(pRef.current); next(); }, d);
     return () => { clearTimeout(tRef.current); clearInterval(pRef.current); };
-  }, [index, bulletin, paused, next, total]);
+  }, [index, bulletin, paused, next, total, baseline]);
 
   useEffect(() => {
     const h = e => {
@@ -373,30 +313,21 @@ export default function PresentPage() {
   const hn = (bulletin?.headerNotes ?? []).filter(n => n.text?.trim());
 
   return (
-    <div
-      ref={cRef}
-      style={{
-        height: '100vh', display: 'flex', flexDirection: 'column',
-        background: t.bg, color: t.text,
-        userSelect: 'none', overflow: 'hidden',
-        fontFamily: "'Inter',sans-serif", position: 'relative',
-      }}
-    >
+    <div ref={cRef} style={{ height: '100vh', display: 'flex', flexDirection: 'column', background: t.bg, color: t.text, userSelect: 'none', overflow: 'hidden', fontFamily: "'Inter',sans-serif", position: 'relative' }}>
       {config.devMode && <div style={{ position: 'fixed', inset: 0, border: '4px solid #22c55e', pointerEvents: 'none', zIndex: 99999 }} />}
       <CrossBackground t={t} />
       <style>{CSS}</style>
 
-      {/* dev badge */}
       {config.devMode && (
         <div style={{ position: 'absolute', top: 10, left: 10, zIndex: 100, background: '#22c55e', color: '#fff', fontSize: 9, fontWeight: 700, padding: '2px 8px', borderRadius: 4, letterSpacing: 1, textTransform: 'uppercase' }}>DEV</div>
       )}
 
-      {/* progress bar */}
+      {/* Progress bar */}
       <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 2, zIndex: 20, background: t.progressBg }}>
         <div style={{ height: '100%', width: `${progress}%`, background: t.gold, transition: 'width 0.05s linear' }} />
       </div>
 
-      {/* header */}
+      {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 64px', flexShrink: 0, zIndex: 10, borderBottom: `1px solid ${t.headerBorder}` }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <span style={{ fontSize: 22, color: t.gold, fontFamily: "'Georgia',serif" }}>✝</span>
@@ -416,7 +347,7 @@ export default function PresentPage() {
         </div>
       </div>
 
-      {/* slide body */}
+      {/* Slide body */}
       <div ref={bodyRef} onClick={next} style={{ flex: 1, cursor: 'pointer', overflow: 'hidden', minHeight: 0, zIndex: 5 }}>
         {!bulletin ? (
           <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -432,7 +363,7 @@ export default function PresentPage() {
         )}
       </div>
 
-      {/* footer dots */}
+      {/* Footer dots */}
       <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 16, padding: '10px 64px', flexShrink: 0, zIndex: 10, borderTop: `1px solid ${t.footerBorder}` }}>
         <button onClick={e => { e.stopPropagation(); prev(); }} disabled={index === 0}
           style={{ background: 'none', border: 'none', color: index === 0 ? t.dotInactive : t.ctrlColor, fontSize: 18, cursor: index === 0 ? 'default' : 'pointer' }}>‹</button>

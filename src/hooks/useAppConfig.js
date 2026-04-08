@@ -7,9 +7,9 @@ const CONFIG_REF = doc(db, 'config', 'app');
 export const DEFAULT_CONFIG = {
   devMode: false,
   lightMode: false,
+  slideBaseline: 10, // seconds — floor before content scaling
 };
 
-/** Live-synced config from Firestore config/app */
 export function useAppConfig() {
   const [config, setConfig] = useState(DEFAULT_CONFIG);
 

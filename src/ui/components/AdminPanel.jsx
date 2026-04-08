@@ -13,6 +13,7 @@ import DragProvider from '../drag/DragContext.jsx';
 import PresetLibrary from './PresetLibrary';
 import AnnouncementPresetLibrary from './AnnouncementPresetLibrary';
 import SlideImagesPanel from './SlideImagesPanel';
+import SlideTimingsPanel from './SlideTimingsPanel';
 import WeeklyView from './WeeklyView';
 import ExtrasPanel from './ExtrasPanel';
 import ImagePicker from './ImagePicker';
@@ -26,7 +27,11 @@ const repo     = new FirebaseBulletinRepo();
 const exporter = new ReactPDFExporter();
 
 function toInputDate(weekLabel) {
-  try { const d = new Date(weekLabel); if (isNaN(d)) return ''; return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; } catch { return ''; }
+  try {
+    const d = new Date(weekLabel);
+    if (isNaN(d)) return '';
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  } catch { return ''; }
 }
 
 function timeAgo(iso) {
@@ -40,7 +45,7 @@ function timeAgo(iso) {
   return `${Math.floor(hrs / 24)}d ago`;
 }
 
-// ── Compact summary card ──────────────────────────────────────
+// ── Summary card ──────────────────────────────────────────────
 function SummaryCard({ item, isActive, isTemplate, onEdit, onPresent, onDelete, onEndSession }) {
   const dayCount   = (item.days ?? []).filter(d => d.events?.length > 0).length;
   const eventCount = (item.days ?? []).reduce((s, d) => s + (d.events?.length ?? 0), 0);
@@ -69,116 +74,69 @@ function SummaryCard({ item, isActive, isTemplate, onEdit, onPresent, onDelete, 
         </div>
       ))}
       <div style={{ display: 'flex', gap: 6, marginTop: 10, flexWrap: 'wrap' }}>
-        <button onClick={onEdit} style={{ padding: '5px 14px', background: 'linear-gradient(135deg, #b8860b, #d4a017)', color: '#fff', border: 'none', borderRadius: 6, fontSize: 11, fontWeight: 600, cursor: 'pointer' }}>Edit</button>
+        <button onClick={onEdit} style={btn('#b8860b', '#d4a017')}>Edit</button>
         {!isTemplate && onPresent && (
-          <button onClick={onPresent} style={{ padding: '7px 18px', background: isActive ? '#27ae60' : '#2c3e50', color: '#fff', border: 'none', borderRadius: 7, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+          <button onClick={onPresent} style={{ padding: '6px 16px', background: isActive ? '#27ae60' : '#2c3e50', color: '#fff', border: 'none', borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
             {isActive ? '✓ Presenting' : '📺 Present'}
           </button>
         )}
         {!isTemplate && onEndSession && (
-          <button onClick={onEndSession} style={{ padding: '7px 18px', background: 'none', border: '1.5px solid #e67e22', borderRadius: 7, fontSize: 13, color: '#e67e22', cursor: 'pointer', fontWeight: 600 }}>End Session</button>
+          <button onClick={onEndSession} style={{ padding: '6px 16px', background: 'none', border: '1.5px solid #e67e22', borderRadius: 7, fontSize: 12, color: '#e67e22', cursor: 'pointer', fontWeight: 600 }}>End</button>
         )}
-        <button onClick={onDelete} style={{ padding: '7px 18px', background: 'none', border: '1.5px solid #e8d9c0', borderRadius: 7, fontSize: 13, color: '#c0392b', cursor: 'pointer' }}>Delete</button>
+        <button onClick={onDelete} style={{ padding: '6px 16px', background: 'none', border: '1.5px solid #e8d9c0', borderRadius: 7, fontSize: 12, color: '#c0392b', cursor: 'pointer' }}>Delete</button>
       </div>
     </div>
   );
 }
 
-// ── Telegram Status Bar ───────────────────────────────────────
+// ── Telegram bar ──────────────────────────────────────────────
 function TelegramBar({ session, publishing, devMode, onPublish, onRepublish, onUndo, onPublishAnnouncements, onUndoAnnouncements }) {
-  const ids        = session?.telegramMessageIds ?? [];
-  const annIds     = session?.telegramAnnouncementIds ?? [];
-  const hasSent    = ids.length > 0;
-  const hasAnnSent = annIds.length > 0;
-  const lastPub    = session?.lastPublished ?? session?.telegramLastSent;
-  const lastAnn    = session?.lastAnnouncementsSent;
+  const ids     = session?.telegramMessageIds ?? [];
+  const annIds  = session?.telegramAnnouncementIds ?? [];
+  const hasSent = ids.length > 0;
+  const hasAnn  = annIds.length > 0;
+  const lastPub = session?.lastPublished ?? session?.telegramLastSent;
+  const lastAnn = session?.lastAnnouncementsSent;
 
   return (
-    <div style={{
-      background: '#fff', borderRadius: 12, border: `1.5px solid ${devMode ? '#22c55e44' : '#e8d9c0'}`,
-      padding: '14px 20px', boxShadow: '0 1px 6px rgba(92,61,30,0.05)',
-    }}>
+    <div style={{ background: '#fff', borderRadius: 12, border: `1.5px solid ${devMode ? '#22c55e44' : '#e8d9c0'}`, padding: '14px 20px', boxShadow: '0 1px 6px rgba(92,61,30,0.05)' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <span style={{ fontSize: 14 }}>📨</span>
           <span style={{ fontSize: 12, fontWeight: 700, color: '#5c3d1e', textTransform: 'uppercase', letterSpacing: 1 }}>Telegram</span>
-          {devMode && (
-            <span style={{ fontSize: 9, fontWeight: 700, color: '#22c55e', background: '#f0fdf4', padding: '2px 7px', borderRadius: 4, border: '1px solid #22c55e44', textTransform: 'uppercase', letterSpacing: 0.5 }}>
-              TEST CHANNEL
-            </span>
-          )}
+          {devMode && <span style={{ fontSize: 9, fontWeight: 700, color: '#22c55e', background: '#f0fdf4', padding: '2px 7px', borderRadius: 4, border: '1px solid #22c55e44', textTransform: 'uppercase', letterSpacing: 0.5 }}>TEST</span>}
         </div>
         {hasSent ? (
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#27ae60' }} />
             <span style={{ fontSize: 11, color: '#27ae60', fontWeight: 600 }}>Sent</span>
             {lastPub && <span style={{ fontSize: 10, color: '#b0956e' }}>· {timeAgo(lastPub)}</span>}
-            <span style={{ fontSize: 10, color: '#b0956e' }}>· {ids.length} message{ids.length > 1 ? 's' : ''}</span>
+            <span style={{ fontSize: 10, color: '#b0956e' }}>· {ids.length} msg{ids.length !== 1 ? 's' : ''}</span>
           </div>
         ) : (
           <span style={{ fontSize: 11, color: '#b0956e' }}>Not yet published</span>
         )}
       </div>
-
-      {lastAnn && (
-        <div style={{ fontSize: 10, color: '#2980b9', marginBottom: 8 }}>
-          📢 Announcements sent {timeAgo(lastAnn)}
-        </div>
-      )}
-
+      {lastAnn && <div style={{ fontSize: 10, color: '#2980b9', marginBottom: 8 }}>📢 Announcements sent {timeAgo(lastAnn)}</div>}
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
         {!hasSent ? (
-          <button onClick={onPublish} disabled={publishing} style={{
-            padding: '8px 20px',
-            background: publishing ? '#ccc' : 'linear-gradient(135deg, #3d2408, #5c3d1e)',
-            color: '#fff', border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 600,
-            cursor: publishing ? 'default' : 'pointer',
-          }}>
+          <button onClick={onPublish} disabled={publishing} style={teleBtn(publishing, '#3d2408', '#5c3d1e')}>
             {publishing ? 'Publishing...' : '📤 Publish Full Bulletin'}
           </button>
         ) : (
           <>
-            <button onClick={onRepublish} disabled={publishing} style={{
-              padding: '8px 18px',
-              background: publishing ? '#ccc' : 'linear-gradient(135deg, #b8860b, #d4a017)',
-              color: '#fff', border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 600,
-              cursor: publishing ? 'default' : 'pointer',
-            }}>
-              {publishing ? '...' : '🔄 Re-publish (replace)'}
+            <button onClick={onRepublish} disabled={publishing} style={teleBtn(publishing, '#b8860b', '#d4a017')}>
+              {publishing ? '...' : '🔄 Re-publish'}
             </button>
-            <button onClick={onUndo} disabled={publishing} style={{
-              padding: '8px 18px', background: 'none', border: '1.5px solid #c0392b',
-              borderRadius: 8, fontSize: 12, fontWeight: 600, color: '#c0392b',
-              cursor: publishing ? 'default' : 'pointer',
-            }}>
-              🗑 Undo Send
-            </button>
+            <button onClick={onUndo} disabled={publishing} style={teleBtnOutline(publishing, '#c0392b')}>🗑 Undo</button>
           </>
         )}
-        <button onClick={onPublishAnnouncements} disabled={publishing} style={{
-          padding: '8px 16px',
-          background: publishing ? '#ccc' : 'linear-gradient(135deg, #1a5276, #2980b9)',
-          color: '#fff', border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 600,
-          cursor: publishing ? 'default' : 'pointer',
-        }}>
+        <button onClick={onPublishAnnouncements} disabled={publishing} style={teleBtn(publishing, '#1a5276', '#2980b9')}>
           📢 Announcements Only
         </button>
-        {hasAnnSent && (
-          <button onClick={onUndoAnnouncements} disabled={publishing} style={{
-            padding: '8px 16px', background: 'none', border: '1.5px solid #2980b9',
-            borderRadius: 8, fontSize: 12, fontWeight: 600, color: '#2980b9',
-            cursor: publishing ? 'default' : 'pointer',
-          }}>
-            🗑 Undo Announcements
-          </button>
-        )}
+        {hasAnn && <button onClick={onUndoAnnouncements} disabled={publishing} style={teleBtnOutline(publishing, '#2980b9')}>🗑 Undo Ann.</button>}
       </div>
-
-      {hasSent && (
-        <div style={{ fontSize: 10, color: '#b0956e', marginTop: 8, fontStyle: 'italic' }}>
-          Undo is available for 48 hours after sending.
-        </div>
-      )}
+      {hasSent && <div style={{ fontSize: 10, color: '#b0956e', marginTop: 8, fontStyle: 'italic' }}>Undo available for 48 hours after sending.</div>}
     </div>
   );
 }
@@ -198,10 +156,10 @@ export default function AdminPanel() {
   const [editingType, setEditingType] = useState(null);
   const [dirty,       setDirty]       = useState(false);
 
-  const [status,      setStatus]      = useState('');
-  const [statusType,  setStatusType]  = useState('info');
-  const [publishing,  setPublishing]  = useState(false);
-  const [saving,      setSaving]      = useState(false);
+  const [status,     setStatus]     = useState('');
+  const [statusType, setStatusType] = useState('info');
+  const [publishing, setPublishing] = useState(false);
+  const [saving,     setSaving]     = useState(false);
 
   const [wizardOpen,       setWizardOpen]       = useState(false);
   const [saveTemplateOpen, setSaveTemplateOpen] = useState(false);
@@ -214,7 +172,6 @@ export default function AdminPanel() {
   const closeConfirm = () => setConfirm(c => ({ ...c, open: false }));
   const setMsg = (msg, type = 'info') => { setStatus(msg); setStatusType(type); setTimeout(() => setStatus(''), 3500); };
 
-  // ── Load data ─────────────────────────────────────────────
   useEffect(() => {
     repo.listSessions().then(setSessions);
     repo.listTemplates().then(setTemplates);
@@ -235,32 +192,25 @@ export default function AdminPanel() {
     if (announcementPresets.length > 0) localStorage.setItem('wa_ann_presets', JSON.stringify(announcementPresets));
   }, [announcementPresets]);
 
-  // ── Helpers ───────────────────────────────────────────────
-  const updater      = editingType === 'template' ? updateTemplate : updateSession;
+  const updater       = editingType === 'template' ? updateTemplate : updateSession;
   const updateEditing = changes => { setDirty(true); setEditing(b => updater(b, changes)); };
-
-  const guardUnsaved = action => {
-    if (dirty) {
-      showConfirm({ title: 'Unsaved changes', message: 'Discard unsaved changes?', confirmLabel: 'Discard', confirmColor: '#e67e22', onConfirm: () => { closeConfirm(); setDirty(false); action(); } });
-    } else action();
+  const guardUnsaved  = action => {
+    if (dirty) showConfirm({ title: 'Unsaved changes', message: 'Discard unsaved changes?', confirmLabel: 'Discard', confirmColor: '#e67e22', onConfirm: () => { closeConfirm(); setDirty(false); action(); } });
+    else action();
   };
 
-  // ── Event preset CRUD ─────────────────────────────────────
-  const addPreset     = async p  => { const o = { ...p, order: presets.length }; await savePreset(o); setPresets(ps => [...ps, o]); };
-  const editPreset    = async p  => { await savePreset(p); setPresets(ps => ps.map(x => x.id === p.id ? p : x)); };
-  const removePreset  = id => { showConfirm({ title: 'Delete event preset?', message: 'Permanently remove this preset?', confirmLabel: 'Delete', onConfirm: async () => { closeConfirm(); await deletePresetFS(id); setPresets(ps => ps.filter(p => p.id !== id)); } }); };
+  const addPreset      = async p  => { const o = { ...p, order: presets.length }; await savePreset(o); setPresets(ps => [...ps, o]); };
+  const editPreset     = async p  => { await savePreset(p); setPresets(ps => ps.map(x => x.id === p.id ? p : x)); };
+  const removePreset   = id => { showConfirm({ title: 'Delete event preset?', message: 'Permanently remove this preset?', confirmLabel: 'Delete', onConfirm: async () => { closeConfirm(); await deletePresetFS(id); setPresets(ps => ps.filter(p => p.id !== id)); } }); };
   const reorderPresets = async r => { setPresets(r); await savePresetOrder(r); };
 
-  // ── Announcement preset CRUD ──────────────────────────────
   const addAnnPreset    = ()  => setAnnouncementPresets(ps => [...ps, createAnnouncementPreset()]);
   const editAnnPreset   = u   => setAnnouncementPresets(ps => ps.map(p => p.id === u.id ? u : p));
   const removeAnnPreset = id  => { showConfirm({ title: 'Delete announcement preset?', message: 'Permanently remove?', confirmLabel: 'Delete', onConfirm: () => { closeConfirm(); setAnnouncementPresets(ps => ps.filter(p => p.id !== id)); } }); };
   const addAnnFromPreset = preset => { if (!editing) return; updateEditing({ announcements: [...(editing.announcements ?? []), createAnnouncement(preset.text, preset.image)] }); };
 
-  // ── Logo ──────────────────────────────────────────────────
   const handleLogoChange = async url => { setLogoUrl(url); await repo.setLogo(url); };
 
-  // ── Drag handlers ─────────────────────────────────────────
   const handleDrop = useCallback((dragData, zoneData) => {
     const { dayIdx } = zoneData;
     setEditing(b => {
@@ -296,7 +246,6 @@ export default function AdminPanel() {
     });
   }, [editingType]);
 
-  // ── Save ──────────────────────────────────────────────────
   const save = async () => {
     if (!editing) return;
     setSaving(true);
@@ -305,11 +254,9 @@ export default function AdminPanel() {
     setDirty(false); setMsg('Saved!', 'success'); setSaving(false);
   };
 
-  // ── Navigation ────────────────────────────────────────────
   const openEditor = (item, type) => { guardUnsaved(() => { setEditing(item); setEditingType(type); setDirty(false); }); };
   const backToList = () => { guardUnsaved(() => { setEditing(null); setEditingType(null); setDirty(false); }); };
 
-  // ── Create new ────────────────────────────────────────────
   const onSessionCreated = async session => {
     await repo.saveSession(session); setSessions(await repo.listSessions());
     setEditing(session); setEditingType('session'); setDirty(false);
@@ -320,7 +267,6 @@ export default function AdminPanel() {
     guardUnsaved(() => { const t = createTemplate('New Template'); setEditing(t); setEditingType('template'); setDirty(true); });
   };
 
-  // ── Save as template ──────────────────────────────────────
   const handleSaveAsTemplate = async (mode, overwriteId, name) => {
     if (!editing || editingType !== 'session') return;
     const tmpl = sessionToTemplate(editing, name);
@@ -332,7 +278,6 @@ export default function AdminPanel() {
     setMsg(`Template saved: ${name}`, 'success');
   };
 
-  // ── Delete ────────────────────────────────────────────────
   const deleteItem = (item, type) => {
     const isPresenting = type === 'session' && activeBulletinId === item.id;
     const name = item.presetName ?? item.name;
@@ -350,7 +295,6 @@ export default function AdminPanel() {
     });
   };
 
-  // ── Present ───────────────────────────────────────────────
   const setAsPresentation = id => {
     const targetId = id ?? editing?.id;
     if (!targetId || activeBulletinId === targetId) return;
@@ -362,9 +306,8 @@ export default function AdminPanel() {
     });
   };
 
-  // ── End session ───────────────────────────────────────────
-  const handleEndSession   = session => { setEndSessionTarget(session); setEndSessionDate(''); setEndSessionMode('restart'); };
-  const confirmEndSession  = async () => {
+  const handleEndSession  = session => { setEndSessionTarget(session); setEndSessionDate(''); setEndSessionMode('restart'); };
+  const confirmEndSession = async () => {
     if (!endSessionTarget) return;
     const session  = endSessionTarget;
     const wasActive = activeBulletinId === session.id;
@@ -385,7 +328,6 @@ export default function AdminPanel() {
     setEndSessionTarget(null);
   };
 
-  // ── Telegram: Publish ─────────────────────────────────────
   const publish = () => {
     if (!editing || editingType !== 'session') return;
     showConfirm({
@@ -400,13 +342,8 @@ export default function AdminPanel() {
           setMsg('Sending to Telegram...', 'info');
           const adapter = await TelegramAdapter.create();
           const messageIds = await adapter.publish(editing, blob);
-          const updated = updateSession(editing, {
-            lastPublished: new Date().toISOString(),
-            telegramMessageIds: messageIds,
-            telegramLastSent: new Date().toISOString(),
-          });
-          setEditing(updated); await repo.saveSession(updated);
-          setSessions(await repo.listSessions());
+          const updated = updateSession(editing, { lastPublished: new Date().toISOString(), telegramMessageIds: messageIds, telegramLastSent: new Date().toISOString() });
+          setEditing(updated); await repo.saveSession(updated); setSessions(await repo.listSessions());
           setDirty(false); setMsg('Published!', 'success');
         } catch (e) { setMsg(`Error: ${e.message}`, 'error'); }
         setPublishing(false);
@@ -414,15 +351,12 @@ export default function AdminPanel() {
     });
   };
 
-  // ── Telegram: Re-publish ──────────────────────────────────
   const republish = () => {
     if (!editing || editingType !== 'session') return;
     const oldIds = editing.telegramMessageIds ?? [];
     showConfirm({
       title: 'Re-publish bulletin?',
-      message: oldIds.length > 0
-        ? `Delete ${oldIds.length} previously sent message${oldIds.length > 1 ? 's' : ''} and send an updated bulletin.`
-        : 'Send an updated bulletin to Telegram.',
+      message: oldIds.length > 0 ? `Delete ${oldIds.length} previously sent message${oldIds.length > 1 ? 's' : ''} and send an updated bulletin.` : 'Send an updated bulletin to Telegram.',
       confirmLabel: 'Re-publish', confirmColor: '#b8860b',
       onConfirm: async () => {
         closeConfirm(); setPublishing(true);
@@ -430,22 +364,15 @@ export default function AdminPanel() {
           if (oldIds.length) {
             setMsg('Removing old messages...', 'info');
             const adapter = await TelegramAdapter.create();
-            const results = await adapter.deleteMessages(oldIds);
-            const failed  = results.filter(r => !r.deleted);
-            if (failed.length) console.warn('Some messages could not be deleted:', failed);
+            await adapter.deleteMessages(oldIds);
           }
           setMsg('Generating PDF...', 'info');
           const blob    = await exporter.export(editing, logoUrl);
           setMsg('Sending updated bulletin...', 'info');
           const adapter = await TelegramAdapter.create();
           const messageIds = await adapter.publish(editing, blob);
-          const updated = updateSession(editing, {
-            lastPublished: new Date().toISOString(),
-            telegramMessageIds: messageIds,
-            telegramLastSent: new Date().toISOString(),
-          });
-          setEditing(updated); await repo.saveSession(updated);
-          setSessions(await repo.listSessions());
+          const updated = updateSession(editing, { lastPublished: new Date().toISOString(), telegramMessageIds: messageIds, telegramLastSent: new Date().toISOString() });
+          setEditing(updated); await repo.saveSession(updated); setSessions(await repo.listSessions());
           setDirty(false); setMsg('Re-published!', 'success');
         } catch (e) { setMsg(`Error: ${e.message}`, 'error'); }
         setPublishing(false);
@@ -453,36 +380,31 @@ export default function AdminPanel() {
     });
   };
 
-  // ── Telegram: Undo ────────────────────────────────────────
   const undoSend = () => {
     if (!editing || editingType !== 'session') return;
     const ids = editing.telegramMessageIds ?? [];
     if (!ids.length) { setMsg('Nothing to undo', 'info'); return; }
     showConfirm({
-      title: 'Undo Telegram send?',
-      message: `Delete ${ids.length} message${ids.length > 1 ? 's' : ''} from the Telegram channel?`,
+      title: 'Undo Telegram send?', message: `Delete ${ids.length} message${ids.length > 1 ? 's' : ''} from the Telegram channel?`,
       warning: 'Messages older than 48 hours cannot be deleted by the bot.',
       confirmLabel: 'Delete Messages', confirmColor: '#c0392b',
       onConfirm: async () => {
         closeConfirm(); setPublishing(true);
         try {
-          setMsg('Deleting messages...', 'info');
           const adapter = await TelegramAdapter.create();
           const results = await adapter.deleteMessages(ids);
           const deleted = results.filter(r => r.deleted).length;
           const failed  = results.filter(r => !r.deleted).length;
           const updated = updateSession(editing, { telegramMessageIds: [], telegramLastSent: null });
-          setEditing(updated); await repo.saveSession(updated);
-          setSessions(await repo.listSessions());
+          setEditing(updated); await repo.saveSession(updated); setSessions(await repo.listSessions());
           setDirty(false);
-          setMsg(failed > 0 ? `Deleted ${deleted}, failed ${failed} (may be >48h old)` : `Deleted ${deleted} message${deleted > 1 ? 's' : ''}`, failed > 0 ? 'error' : 'success');
+          setMsg(failed > 0 ? `Deleted ${deleted}, failed ${failed}` : `Deleted ${deleted} message${deleted > 1 ? 's' : ''}`, failed > 0 ? 'error' : 'success');
         } catch (e) { setMsg(`Error: ${e.message}`, 'error'); }
         setPublishing(false);
       },
     });
   };
 
-  // ── Telegram: Announcements only ──────────────────────────
   const publishAnnouncements = async () => {
     if (!editing || editingType !== 'session') return;
     const ann = editing.announcements ?? [];
@@ -491,10 +413,7 @@ export default function AdminPanel() {
     try {
       const adapter = await TelegramAdapter.create();
       const ids = await adapter.publishAnnouncements(editing);
-      const updated = updateSession(editing, {
-        lastAnnouncementsSent: new Date().toISOString(),
-        telegramAnnouncementIds: ids,
-      });
+      const updated = updateSession(editing, { lastAnnouncementsSent: new Date().toISOString(), telegramAnnouncementIds: ids });
       setEditing(updated); await repo.saveSession(updated);
       setMsg('Announcements sent!', 'success');
     } catch (e) { setMsg(`Error: ${e.message}`, 'error'); }
@@ -506,8 +425,7 @@ export default function AdminPanel() {
     const ids = editing.telegramAnnouncementIds ?? [];
     if (!ids.length) { setMsg('Nothing to undo', 'info'); return; }
     showConfirm({
-      title: 'Undo announcements?',
-      message: `Delete ${ids.length} announcement message${ids.length > 1 ? 's' : ''} from Telegram?`,
+      title: 'Undo announcements?', message: `Delete ${ids.length} announcement message${ids.length > 1 ? 's' : ''} from Telegram?`,
       warning: 'Messages older than 48 hours cannot be deleted by the bot.',
       confirmLabel: 'Delete Messages', confirmColor: '#c0392b',
       onConfirm: async () => {
@@ -529,9 +447,7 @@ export default function AdminPanel() {
   const statusColor = { success: '#27ae60', error: '#c0392b', info: '#7a6352' }[statusType];
   const isSession   = editingType === 'session';
 
-  // ══════════════════════════════════════════════════════════
-  // VIEW MODE (list)
-  // ══════════════════════════════════════════════════════════
+  // ── LIST VIEW ─────────────────────────────────────────────
   if (!editing) {
     return (
       <div style={{ minHeight: '100vh', background: '#f4ece0', fontFamily: 'Inter, sans-serif' }}>
@@ -539,7 +455,6 @@ export default function AdminPanel() {
         <ConfirmModal {...confirm} onCancel={closeConfirm} />
         <NewSessionWizard open={wizardOpen} templates={templates} onClose={() => setWizardOpen(false)} onCreate={onSessionCreated} />
 
-        {/* End-session modal — unchanged */}
         {endSessionTarget && (
           <div onClick={() => setEndSessionTarget(null)} style={{ position: 'fixed', inset: 0, zIndex: 99999, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <style>{`@keyframes slideUp{from{transform:translateY(12px);opacity:0}to{transform:translateY(0);opacity:1}}`}</style>
@@ -551,11 +466,11 @@ export default function AdminPanel() {
               <div style={{ padding: '20px 28px' }}>
                 <div style={{ fontSize: 13, color: '#5c3d1e', marginBottom: 16, lineHeight: 1.6 }}>What would you like to do with this session?</div>
                 <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
-                  <button onClick={() => setEndSessionMode('restart')} style={{ flex: 1, padding: '14px 14px', borderRadius: 10, cursor: 'pointer', textAlign: 'left', background: endSessionMode === 'restart' ? '#fdf6ec' : '#fff', border: endSessionMode === 'restart' ? '1.5px solid #b8860b' : '1.5px solid #e8d9c0' }}>
+                  <button onClick={() => setEndSessionMode('restart')} style={{ flex: 1, padding: '14px', borderRadius: 10, cursor: 'pointer', textAlign: 'left', background: endSessionMode === 'restart' ? '#fdf6ec' : '#fff', border: endSessionMode === 'restart' ? '1.5px solid #b8860b' : '1.5px solid #e8d9c0' }}>
                     <div style={{ fontSize: 13, fontWeight: 700, color: endSessionMode === 'restart' ? '#b8860b' : '#3d2408' }}>🔄 Restart with new date</div>
                     <div style={{ fontSize: 11, color: '#b0956e', marginTop: 3 }}>Create a new session using the same template with a new week date</div>
                   </button>
-                  <button onClick={() => setEndSessionMode('archive')} style={{ flex: 1, padding: '14px 14px', borderRadius: 10, cursor: 'pointer', textAlign: 'left', background: endSessionMode === 'archive' ? '#fdf6ec' : '#fff', border: endSessionMode === 'archive' ? '1.5px solid #b8860b' : '1.5px solid #e8d9c0' }}>
+                  <button onClick={() => setEndSessionMode('archive')} style={{ flex: 1, padding: '14px', borderRadius: 10, cursor: 'pointer', textAlign: 'left', background: endSessionMode === 'archive' ? '#fdf6ec' : '#fff', border: endSessionMode === 'archive' ? '1.5px solid #b8860b' : '1.5px solid #e8d9c0' }}>
                     <div style={{ fontSize: 13, fontWeight: 700, color: endSessionMode === 'archive' ? '#b8860b' : '#3d2408' }}>✓ Just end it</div>
                     <div style={{ fontSize: 11, color: '#b0956e', marginTop: 3 }}>Stop presenting{activeBulletinId === endSessionTarget.id ? ' (currently live)' : ''}</div>
                   </button>
@@ -583,7 +498,6 @@ export default function AdminPanel() {
           </div>
         )}
 
-        {/* Header */}
         <div style={{ background: 'linear-gradient(135deg, #2e1a08 0%, #5c3d1e 100%)', boxShadow: '0 2px 24px rgba(46,26,8,0.3)' }}>
           <div style={{ maxWidth: 960, margin: '0 auto', padding: '20px 32px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -595,7 +509,7 @@ export default function AdminPanel() {
               {config.devMode && <span style={{ fontSize: 10, fontWeight: 700, color: '#22c55e', background: 'rgba(34,197,94,0.1)', padding: '3px 10px', borderRadius: 4, border: '1px solid rgba(34,197,94,0.3)', letterSpacing: 1, textTransform: 'uppercase' }}>Dev Mode</span>}
             </div>
             <div style={{ display: 'flex', gap: 10 }}>
-              <button onClick={() => setWizardOpen(true)} style={{ padding: '8px 20px', background: 'linear-gradient(135deg, #b8860b, #d4a017)', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>+ New Session</button>
+              <button onClick={() => setWizardOpen(true)} style={btn('#b8860b', '#d4a017')}>+ New Session</button>
               <button onClick={createNewTemplate} style={{ padding: '8px 20px', background: 'rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.7)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 8, fontSize: 13, cursor: 'pointer' }}>+ New Template</button>
               <a href="/" style={{ color: 'rgba(255,255,255,0.4)', fontSize: 12, textDecoration: 'none', padding: '8px 12px', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 6, display: 'flex', alignItems: 'center' }}>Present →</a>
             </div>
@@ -603,9 +517,10 @@ export default function AdminPanel() {
         </div>
 
         <div style={{ maxWidth: 960, margin: '0 auto', padding: '24px 32px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24, alignItems: 'start' }}>
+
           <div>
-            <div style={{ fontSize: 13, fontWeight: 700, color: '#5c3d1e', textTransform: 'uppercase', letterSpacing: 2, marginBottom: 14 }}>Sessions ({sessions.length})</div>
-            {sessions.length === 0 && <div style={{ color: '#c4a882', fontSize: 14, padding: '20px 0' }}>No sessions yet.</div>}
+            <SectionTitle>Sessions ({sessions.length})</SectionTitle>
+            {sessions.length === 0 && <EmptyMsg>No sessions yet.</EmptyMsg>}
             {sessions.map(s => (
               <SummaryCard key={s.id} item={s} isActive={activeBulletinId === s.id}
                 onEdit={() => openEditor(s, 'session')} onPresent={() => setAsPresentation(s.id)}
@@ -613,20 +528,25 @@ export default function AdminPanel() {
             ))}
           </div>
           <div>
-            <div style={{ fontSize: 13, fontWeight: 700, color: '#5c3d1e', textTransform: 'uppercase', letterSpacing: 2, marginBottom: 14 }}>Templates ({templates.length})</div>
-            {templates.length === 0 && <div style={{ color: '#c4a882', fontSize: 14, padding: '20px 0' }}>No templates yet.</div>}
+            <SectionTitle>Templates ({templates.length})</SectionTitle>
+            {templates.length === 0 && <EmptyMsg>No templates yet.</EmptyMsg>}
             {templates.map(t => (
               <SummaryCard key={t.id} item={t} isTemplate onEdit={() => openEditor(t, 'template')} onDelete={() => deleteItem(t, 'template')} />
             ))}
+          </div>
+
+          {/* Config panel spanning full width */}
+          <div style={{ gridColumn: '1 / -1' }}>
+            <Card style={{ border: `1.5px solid ${config.devMode ? '#22c55e55' : '#e8d9c0'}` }}>
+              <ConfigPanel />
+            </Card>
           </div>
         </div>
       </div>
     );
   }
 
-  // ══════════════════════════════════════════════════════════
-  // EDIT MODE
-  // ══════════════════════════════════════════════════════════
+  // ── EDIT VIEW ─────────────────────────────────────────────
   const editorName    = editing.presetName ?? editing.name ?? 'Untitled';
   const setEditorName = v => { if (isSession) updateEditing({ presetName: v }); else updateEditing({ name: v }); };
 
@@ -637,7 +557,7 @@ export default function AdminPanel() {
         <ConfirmModal {...confirm} onCancel={closeConfirm} />
         <SaveTemplateModal open={saveTemplateOpen} defaultName={editorName} sourceTemplateId={editing.templateId} templates={templates} onSave={handleSaveAsTemplate} onClose={() => setSaveTemplateOpen(false)} />
 
-        {/* Header */}
+        {/* Top header */}
         <div style={{ background: 'linear-gradient(135deg, #2e1a08 0%, #5c3d1e 100%)', boxShadow: '0 2px 24px rgba(46,26,8,0.3)' }}>
           <div style={{ maxWidth: 1400, margin: '0 auto', padding: '14px 32px', display: 'flex', alignItems: 'center', gap: 14 }}>
             <button onClick={backToList} style={{ background: 'none', border: '1px solid rgba(255,255,255,0.15)', color: 'rgba(255,255,255,0.6)', fontSize: 12, cursor: 'pointer', padding: '6px 12px', borderRadius: 6 }}>← Back</button>
@@ -707,10 +627,10 @@ export default function AdminPanel() {
 
             <div style={{ flex: 1 }} />
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              <button onClick={save} disabled={saving} style={{ padding: '7px 20px', background: saving ? '#ccc' : 'linear-gradient(135deg, #b8860b, #d4a017)', color: '#fff', border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: saving ? 'default' : 'pointer' }}>
+              <button onClick={save} disabled={saving} style={teleBtn(saving, '#b8860b', '#d4a017')}>
                 {saving ? 'Saving...' : dirty ? 'Save *' : 'Save'}
               </button>
-              {isSession && <button onClick={() => setSaveTemplateOpen(true)} style={{ padding: '7px 16px', background: '#f4ece0', border: '1px solid #e0cba8', borderRadius: 8, fontSize: 12, color: '#5c3d1e', cursor: 'pointer', fontWeight: 500 }}>Save as Template</button>}
+              {isSession && <button onClick={() => setSaveTemplateOpen(true)} style={{ padding: '7px 16px', background: '#f4ece0', border: '1px solid #e0cba8', borderRadius: 8, fontSize: 12, color: '#5c3d1e', cursor: 'pointer' }}>Save as Template</button>}
               {isSession && (
                 <button onClick={() => setAsPresentation()} style={{ padding: '7px 16px', background: activeBulletinId === editing.id ? '#27ae60' : '#2c3e50', color: '#fff', border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5 }}>
                   {activeBulletinId === editing.id && <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#fff', boxShadow: '0 0 5px #fff8' }} />}
@@ -722,46 +642,32 @@ export default function AdminPanel() {
           </div>
         </div>
 
-        {/* Main layout */}
+        {/* Main grid */}
         <div style={{ maxWidth: 1400, margin: '0 auto', padding: '24px 32px', display: 'grid', gridTemplateColumns: '280px 1fr', gap: 24, alignItems: 'start' }}>
 
           {/* Sidebar */}
           <div style={{ position: 'sticky', top: 24, maxHeight: 'calc(100vh - 120px)', overflowY: 'auto', scrollbarWidth: 'thin', display: 'flex', flexDirection: 'column', gap: 14 }}>
-            <div style={{ background: '#fff', borderRadius: 16, border: '1.5px solid #e8d9c0', padding: 14, boxShadow: '0 1px 8px rgba(92,61,30,0.07)' }}>
-              <PresetLibrary presets={presets} onAdd={addPreset} onEdit={editPreset} onDelete={removePreset} onReorder={reorderPresets} />
-            </div>
-            <div style={{ background: '#fff', borderRadius: 16, border: '1.5px solid #e8d9c0', padding: 14, boxShadow: '0 1px 8px rgba(92,61,30,0.07)' }}>
-              <AnnouncementPresetLibrary presets={announcementPresets} onAdd={addAnnFromPreset} onEdit={editAnnPreset} onDelete={removeAnnPreset} onAddNew={addAnnPreset} />
-            </div>
-            {/* Config panel — always visible in sidebar */}
-            <div style={{ background: '#fff', borderRadius: 16, border: `1.5px solid ${config.devMode ? '#22c55e55' : '#e8d9c0'}`, padding: 14, boxShadow: '0 1px 8px rgba(92,61,30,0.07)' }}>
-              <ConfigPanel />
-            </div>
+            <Card><PresetLibrary presets={presets} onAdd={addPreset} onEdit={editPreset} onDelete={removePreset} onReorder={reorderPresets} /></Card>
+            <Card><AnnouncementPresetLibrary presets={announcementPresets} onAdd={addAnnFromPreset} onEdit={editAnnPreset} onDelete={removeAnnPreset} onAddNew={addAnnPreset} /></Card>
+            <Card style={{ border: `1.5px solid ${config.devMode ? '#22c55e55' : '#e8d9c0'}` }}><ConfigPanel /></Card>
           </div>
 
-          {/* Content */}
+          {/* Content column */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
             {isSession && (
-              <TelegramBar
-                session={editing}
-                publishing={publishing}
-                devMode={config.devMode}
-                onPublish={publish}
-                onRepublish={republish}
-                onUndo={undoSend}
-                onPublishAnnouncements={publishAnnouncements}
-                onUndoAnnouncements={undoAnnouncements}
-              />
+              <TelegramBar session={editing} publishing={publishing} devMode={config.devMode}
+                onPublish={publish} onRepublish={republish} onUndo={undoSend}
+                onPublishAnnouncements={publishAnnouncements} onUndoAnnouncements={undoAnnouncements} />
             )}
 
             {/* Header Notes */}
-            <div style={{ background: '#fff', borderRadius: 16, border: '1.5px solid #e8d9c0', padding: '18px 24px', boxShadow: '0 1px 8px rgba(92,61,30,0.07)' }}>
+            <Card>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-                <div style={{ fontSize: 10, fontWeight: 700, color: '#b0956e', textTransform: 'uppercase', letterSpacing: 1 }}>Header Notes</div>
+                <SectionTitle>Header Notes</SectionTitle>
                 <button onClick={() => updateEditing({ headerNotes: [...(editing.headerNotes ?? []), createHeaderNote()] })}
                   style={{ padding: '3px 10px', background: 'none', border: '1.5px dashed #c9a96e', borderRadius: 6, color: '#7a5230', fontSize: 10, cursor: 'pointer', fontWeight: 600 }}>+ Add</button>
               </div>
-              {(editing.headerNotes ?? []).length === 0 && <div style={{ fontSize: 11, color: '#c4a882' }}>Shown at top of presentation & Telegram.</div>}
+              {(editing.headerNotes ?? []).length === 0 && <div style={{ fontSize: 11, color: '#c4a882' }}>Shown at top of presentation &amp; Telegram.</div>}
               {(editing.headerNotes ?? []).map((note, i) => (
                 <div key={note.id} style={{ display: 'flex', gap: 8, marginBottom: 6, alignItems: 'center' }}>
                   <div style={{ width: 3, alignSelf: 'stretch', background: '#d4a017', borderRadius: 2 }} />
@@ -771,26 +677,63 @@ export default function AdminPanel() {
                     style={{ background: 'none', border: 'none', color: '#c0392b', fontSize: 13, cursor: 'pointer' }}>✕</button>
                 </div>
               ))}
-            </div>
+            </Card>
 
             {/* Weekly Schedule */}
-            <div style={{ background: '#fff', borderRadius: 16, border: '1.5px solid #e8d9c0', padding: '20px 24px', boxShadow: '0 1px 8px rgba(92,61,30,0.07)' }}>
-              <div style={{ fontSize: 10, fontWeight: 700, color: '#b0956e', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 16 }}>Weekly Schedule</div>
+            <Card>
+              <SectionTitle style={{ marginBottom: 16 }}>Weekly Schedule</SectionTitle>
               <WeeklyView bulletin={editing} onUpdateBulletin={b => { setDirty(true); setEditing(updater(b, {})); }} presets={presets} />
-            </div>
+            </Card>
+
+            {/* Extras */}
+            <Card>
+              <ExtrasPanel bulletin={editing} onChange={b => { setDirty(true); setEditing(updater(b, {})); }} />
+            </Card>
 
             {/* Slide Images */}
-            <div style={{ background: '#fff', borderRadius: 16, border: '1.5px solid #e8d9c0', padding: '20px 24px', boxShadow: '0 1px 8px rgba(92,61,30,0.07)' }}>
+            <Card>
               <SlideImagesPanel slideImages={editing.slideImages ?? []} onChange={imgs => updateEditing({ slideImages: imgs })} />
-            </div>
+            </Card>
 
-            {/* Extras (announcements + multi-day) */}
-            <div style={{ background: '#fff', borderRadius: 16, border: '1.5px solid #e8d9c0', padding: '20px 24px', boxShadow: '0 1px 8px rgba(92,61,30,0.07)' }}>
-              <ExtrasPanel bulletin={editing} onChange={b => { setDirty(true); setEditing(updater(b, {})); }} />
-            </div>
+            {/* Slide Timings */}
+            <Card>
+              <SlideTimingsPanel bulletin={editing} onChange={changes => updateEditing(changes)} />
+            </Card>
           </div>
         </div>
       </div>
     </DragProvider>
   );
 }
+
+// ── Shared mini-components ────────────────────────────────────
+const Card = ({ children, style }) => (
+  <div style={{ background: '#fff', borderRadius: 16, border: '1.5px solid #e8d9c0', padding: '20px 24px', boxShadow: '0 1px 8px rgba(92,61,30,0.07)', ...style }}>
+    {children}
+  </div>
+);
+
+const SectionTitle = ({ children, style }) => (
+  <div style={{ fontSize: 10, fontWeight: 700, color: '#b0956e', textTransform: 'uppercase', letterSpacing: 1, ...style }}>{children}</div>
+);
+
+const EmptyMsg = ({ children }) => (
+  <div style={{ color: '#c4a882', fontSize: 14, padding: '20px 0' }}>{children}</div>
+);
+
+const btn = (from, to) => ({
+  padding: '8px 20px', background: `linear-gradient(135deg, ${from}, ${to})`,
+  color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer',
+});
+
+const teleBtn = (disabled, from, to) => ({
+  padding: '8px 16px', background: disabled ? '#ccc' : `linear-gradient(135deg, ${from}, ${to})`,
+  color: '#fff', border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 600,
+  cursor: disabled ? 'default' : 'pointer',
+});
+
+const teleBtnOutline = (disabled, color) => ({
+  padding: '8px 16px', background: 'none', border: `1.5px solid ${color}`,
+  borderRadius: 8, fontSize: 12, fontWeight: 600, color,
+  cursor: disabled ? 'default' : 'pointer',
+});

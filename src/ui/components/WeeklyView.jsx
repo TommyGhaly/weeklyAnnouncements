@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { TimePicker, DatePicker } from './DrumPicker';
-import ImageUpload from './ImageUpload';
 import ImagePicker from './ImagePicker';
+import DurationChip from './DurationChip';
 import { useDropZone } from '../drag/useDropZone.js';
 import { useDrag } from '../drag/useDrag.js';
 import { useDragCtx } from '../drag/DragContext.jsx';
@@ -10,12 +10,10 @@ const ALL_DAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','S
 const prevDayName = day => ALL_DAYS[(ALL_DAYS.indexOf(day) - 1 + 7) % 7];
 const nextDayName = day => ALL_DAYS[(ALL_DAYS.indexOf(day) + 1) % 7];
 
-/** ISO string from a Date */
 function toISO(d) {
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 }
 
-/** Add n days to an ISO date string, return ISO string. Returns '' if input is empty/invalid. */
 function addDaysISO(iso, n) {
   if (!iso) return '';
   const d = new Date(iso + 'T00:00:00');
@@ -24,7 +22,6 @@ function addDaysISO(iso, n) {
   return toISO(d);
 }
 
-/** Compute ISO date for a new day inserted before/after a reference day */
 function computeInsertDate(refDay, position) {
   return addDaysISO(refDay.date, position === 'before' ? -1 : 1);
 }
@@ -62,15 +59,11 @@ function EventCard({ event, dayIdx, eventIdx, onUpdate, onRemove, presets }) {
   const remContact = i => upd('contacts', (event.contacts ?? []).filter((_, j) => j !== i));
 
   return (
-    <div
-      ref={cardRef}
-      style={{
+    <div ref={cardRef} style={{
       borderRadius: 10, overflow: 'hidden',
       border: `1.5px solid ${expanded ? color : '#e8d9c0'}`,
       borderLeft: `4px solid ${color}`,
-      background: '#fff',
-      boxShadow: '0 1px 4px rgba(92,61,30,0.06)',
-      opacity: 1,
+      background: '#fff', boxShadow: '0 1px 4px rgba(92,61,30,0.06)',
       marginBottom: 8, userSelect: 'none',
     }}>
       {event.image && !expanded && (
@@ -80,10 +73,11 @@ function EventCard({ event, dayIdx, eventIdx, onUpdate, onRemove, presets }) {
       )}
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '9px 10px' }}>
-        <div onMouseDown={e => { e.stopPropagation(); onSortDrag(e); }} style={{ color: '#d0b88a', fontSize: 15, cursor: 'grab', flexShrink: 0, lineHeight: 1 }}>⠿</div>
+        <div onMouseDown={e => { e.stopPropagation(); onSortDrag(e); }}
+          style={{ color: '#d0b88a', fontSize: 15, cursor: 'grab', flexShrink: 0, lineHeight: 1 }}>⠿</div>
 
         <div style={{ flex: 1, minWidth: 0, cursor: 'pointer' }} onClick={() => setExpanded(e => !e)}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
             <span style={{ fontSize: 13, fontWeight: event.modified ? 700 : 600, color: '#3d2408' }}>{event.name}</span>
             {event.modified && (
               <span style={{ fontSize: 9, fontWeight: 700, color, background: `${color}18`, padding: '1px 5px', borderRadius: 4, textTransform: 'uppercase', letterSpacing: 0.5 }}>modified</span>
@@ -150,23 +144,31 @@ function DayDropZone({ dayData, dayIdx, onUpdateDay, onRemoveDay, presets }) {
 
   return (
     <div style={{ marginBottom: 4 }}>
+      {/* Day header row */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
         <span style={{ fontSize: 14, fontWeight: 700, color: '#5c3d1e', minWidth: 80 }}>{dayData.day}</span>
         <DatePicker value={dayData.date ?? ''} onChange={v => onUpdateDay({ ...dayData, date: v })} />
+
+        {/* Duration chip — overrides this day's slide duration */}
+        <DurationChip
+          type="day"
+          items={dayData.events.length}
+          value={dayData.duration ?? null}
+          onChange={v => onUpdateDay({ ...dayData, duration: v })}
+        />
+
         <div style={{ flex: 1, height: 1, background: '#e8d9c0' }} />
-        <button onClick={onRemoveDay} title="Remove day" style={{ background: 'none', border: 'none', color: '#d0b88a', fontSize: 12, cursor: 'pointer', padding: '2px 4px' }}>✕</button>
+        <button onClick={onRemoveDay} title="Remove day"
+          style={{ background: 'none', border: 'none', color: '#d0b88a', fontSize: 12, cursor: 'pointer', padding: '2px 4px' }}>✕</button>
       </div>
 
-      <div
-        ref={ref}
-        style={{
-          minHeight: 56, borderRadius: 10,
-          border: `1.5px dashed ${isOver ? '#b8860b' : '#e8d9c0'}`,
-          background: isOver ? '#fffbf0' : 'transparent',
-          padding: dayData.events.length > 0 ? '8px 8px 2px' : 0,
-          transition: 'border-color 0.15s, background 0.15s',
-        }}
-      >
+      <div ref={ref} style={{
+        minHeight: 56, borderRadius: 10,
+        border: `1.5px dashed ${isOver ? '#b8860b' : '#e8d9c0'}`,
+        background: isOver ? '#fffbf0' : 'transparent',
+        padding: dayData.events.length > 0 ? '8px 8px 2px' : 0,
+        transition: 'border-color 0.15s, background 0.15s',
+      }}>
         {dayData.events.length === 0 && (
           <div style={{ padding: '14px 0', textAlign: 'center', color: isOver ? '#b8860b' : '#d0c4a8', fontSize: 12, fontWeight: isOver ? 600 : 400 }}>
             {isOver ? '↓ Drop here' : 'Drag events here'}
