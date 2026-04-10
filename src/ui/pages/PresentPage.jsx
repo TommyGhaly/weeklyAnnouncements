@@ -71,22 +71,34 @@ function TitleBar({ color }) {
   );
 }
 
+// Single source of truth: all card/font/spacing derived from available body height and item count.
+// Title fonts are intentionally excluded — those stay fixed via clamp() in each slide.
+function cardMetrics(bodyH, n) {
+  const gap   = Math.max(2, Math.min(6, Math.floor(bodyH / Math.max(n, 1) / 10)));
+  const cardH = n > 0 ? Math.floor((bodyH - gap * (n - 1)) / n * 0.85) : Math.floor(bodyH * 0.85);
+  const nameSize = Math.min(42, Math.max(11, cardH * 0.32));
+  const timeSize = Math.min(28, Math.max(9,  cardH * 0.20));
+  const noteSize = Math.min(14, Math.max(8,  cardH * 0.11));
+  const dateSize = Math.min(13, Math.max(8,  cardH * 0.09));
+  const pad      = Math.min(18, Math.max(3,  cardH * 0.11));
+  const barW     = Math.max(3,  Math.min(5,  cardH * 0.04));
+  const br       = Math.min(8,  cardH * 0.08);
+  const showNotes    = cardH > 52;
+  const showContacts = cardH > 70;
+  return { gap, cardH, nameSize, timeSize, noteSize, dateSize, pad, barW, br, showNotes, showContacts };
+}
+
 function DaySlide({ data, h, t }) {
   const evts = data.events ?? [];
   const n = evts.length;
   const dt = fmtD(data.date, { weekday: 'long', month: 'long', day: 'numeric' });
-  const titleH = 90, bodyH = h - titleH;
-  const gap = Math.max(2, Math.min(8, Math.floor(bodyH / Math.max(n, 1) / 8)));
-  const cardH = n > 0 ? Math.floor((bodyH - gap * (n - 1)) / n) : bodyH;
-  const nameSize = Math.min(48, Math.max(13, cardH * 0.35));
-  const timeSize = Math.min(38, Math.max(11, cardH * 0.28));
-  const noteSize = Math.min(15, Math.max(9,  cardH * 0.12));
-  const pad = Math.min(20, Math.max(3, cardH * 0.12));
-  const showNotes = cardH > 60, showContacts = cardH > 80;
+
+  const TITLE_H = 86;
+  const { gap, cardH, nameSize, timeSize, noteSize, pad, showNotes, showContacts } = cardMetrics(h - TITLE_H, n);
 
   return (
-    <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', padding: '16px 64px 12px', boxSizing: 'border-box', overflow: 'hidden' }}>
-      <div style={{ height: titleH, flexShrink: 0, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', paddingBottom: 8 }}>
+    <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', padding: '20px 144px 16px', boxSizing: 'border-box', overflow: 'hidden' }}>
+      <div style={{ height: TITLE_H, flexShrink: 0, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', paddingBottom: 8 }}>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 14 }}>
           <span style={{ fontSize: 'clamp(32px,5vw,64px)', fontFamily: "'Georgia',serif", fontWeight: 700, color: t.text, lineHeight: 1 }}>{data.day}</span>
           {dt && <span style={{ fontSize: 'clamp(11px,1.2vw,16px)', color: t.textFaint, letterSpacing: 3, fontWeight: 300 }}>{dt}</span>}
@@ -99,10 +111,16 @@ function DaySlide({ data, h, t }) {
           return (
             <div key={i} style={{ display: 'flex', alignItems: 'stretch', height: cardH, maxHeight: cardH, borderRadius: Math.min(8, cardH * 0.1), overflow: 'hidden', background: t.cardBg, flexShrink: 0 }}>
               <div style={{ width: Math.max(3, Math.min(5, cardH * 0.04)), background: c, flexShrink: 0 }} />
-              {ev.image && <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: Math.max(3, pad * 0.4), width: cardH * 0.9, maxWidth: '22vw', background: 'rgba(0,0,0,0.1)' }}><img src={ev.image} alt="" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', borderRadius: 4 }} /></div>}
-              <div style={{ flex: 1, padding: `${pad * 0.6}px ${pad}px`, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 1, minWidth: 0, overflow: 'hidden' }}>
+              {ev.image && (
+                <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: Math.max(3, pad * 0.4), width: cardH * 0.9, maxWidth: '22vw', background: 'rgba(0,0,0,0.1)' }}>
+                  <img src={ev.image} alt="" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', borderRadius: 4 }} />
+                </div>
+              )}
+              <div style={{ flex: 1, padding: `${pad * 0.5}px ${pad}px`, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 1, minWidth: 0, overflow: 'hidden' }}>
                 <div style={{ fontSize: nameSize, fontFamily: "'Georgia',serif", fontWeight: 700, color: t.text, lineHeight: 1.1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{ev.name}</div>
-                {showNotes && ev.notes && <div style={{ fontSize: noteSize, color: t.textMuted, lineHeight: 1.3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{ev.notes}</div>}
+                {showNotes && ev.notes && (
+                  <div style={{ fontSize: noteSize, color: t.textMuted, lineHeight: 1.3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{ev.notes}</div>
+                )}
                 {showContacts && (ev.contacts ?? []).length > 0 && (
                   <div style={{ display: 'flex', gap: 12, flexWrap: 'nowrap', overflow: 'hidden' }}>
                     {ev.contacts.slice(0, 2).map((ct, j) => (
@@ -114,9 +132,10 @@ function DaySlide({ data, h, t }) {
                 )}
               </div>
               {(ev.time || ev.timeTo) && (
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', justifyContent: 'center', padding: `${pad * 0.5}px ${pad * 0.8}px`, flexShrink: 0 }}>
-                  {ev.time  && <div style={{ fontSize: timeSize,        fontWeight: 800, color: c,         fontFamily: "'Georgia',serif", whiteSpace: 'nowrap', lineHeight: 1 }}>{ev.time}</div>}
-                  {ev.timeTo && <div style={{ fontSize: timeSize * 0.72, fontWeight: 600, color: `${c}99`, fontFamily: "'Georgia',serif", whiteSpace: 'nowrap', lineHeight: 1, marginTop: 1 }}>{ev.timeTo}</div>}
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', justifyContent: 'center', padding: `${pad * 0.5}px ${pad * 0.8}px`, flexShrink: 0, gap: 2 }}>
+                  {ev.time && <div style={{ fontSize: timeSize, fontWeight: 800, color: c, fontFamily: "'Georgia',serif", whiteSpace: 'nowrap', lineHeight: 1 }}>{ev.time}</div>}
+                  {ev.time && ev.timeTo && <div style={{ fontSize: timeSize * 0.72, fontWeight: 600, color: `${c}99`, fontFamily: "'Georgia',serif", whiteSpace: 'nowrap', lineHeight: 1 }}>to</div>}
+                  {ev.timeTo && <div style={{ fontSize: timeSize * 0.72, fontWeight: 600, color: `${c}99`, fontFamily: "'Georgia',serif", whiteSpace: 'nowrap', lineHeight: 1 }}>{ev.timeTo}</div>}
                 </div>
               )}
             </div>
@@ -129,24 +148,24 @@ function DaySlide({ data, h, t }) {
 
 function AnnSlide({ data, h, t }) {
   const n = data.length;
-  const titleH = 90, bodyH = h - titleH;
-  const gap = Math.max(2, Math.min(8, Math.floor(bodyH / Math.max(n, 1) / 8)));
-  const rowH = n > 0 ? Math.floor((bodyH - gap * (n - 1)) / n) : bodyH;
-  const fontSize = Math.min(36, Math.max(12, rowH * 0.3));
-  const barW = Math.max(3, Math.min(5, rowH * 0.04));
-  const br = Math.min(8, rowH * 0.08);
+  const TITLE_H = 86;
+  const { gap, cardH, nameSize: fontSize, pad, barW, br } = cardMetrics(h - TITLE_H, n);
 
   return (
-    <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', padding: '16px 64px 12px', boxSizing: 'border-box', overflow: 'hidden' }}>
-      <div style={{ height: titleH, flexShrink: 0, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', paddingBottom: 8 }}>
+    <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', padding: '20px 144px 16px', boxSizing: 'border-box', overflow: 'hidden' }}>
+      <div style={{ height: TITLE_H, flexShrink: 0, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', paddingBottom: 8 }}>
         <div style={{ fontSize: 'clamp(28px,4.5vw,56px)', fontFamily: "'Georgia',serif", fontWeight: 700, color: t.text, lineHeight: 1 }}>Announcements</div>
         <TitleBar color={t.blue} />
       </div>
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap, overflow: 'hidden' }}>
         {data.map((a, i) => (
-          <div key={i} style={{ display: 'flex', alignItems: 'center', gap: Math.max(8, rowH * 0.12), height: rowH, maxHeight: rowH, flexShrink: 0, borderLeft: `${barW}px solid ${t.blue}`, paddingLeft: Math.max(10, rowH * 0.1), background: t.cardBg, borderRadius: `0 ${br}px ${br}px 0`, overflow: 'hidden' }}>
-            {a.image && <div style={{ flexShrink: 0, height: '80%', display: 'flex', alignItems: 'center' }}><img src={a.image} alt="" style={{ maxHeight: '100%', maxWidth: rowH * 1.2, objectFit: 'contain', borderRadius: 4 }} /></div>}
-            <span style={{ fontSize, color: t.text, lineHeight: 1.3, fontFamily: "'Georgia',serif", fontWeight: 400, overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: Math.max(1, Math.floor(rowH / (fontSize * 1.4))), WebkitBoxOrient: 'vertical' }}>{a.text}</span>
+          <div key={i} style={{ display: 'flex', alignItems: 'center', gap: Math.max(8, cardH * 0.12), height: cardH, maxHeight: cardH, flexShrink: 0, borderLeft: `${barW}px solid ${t.blue}`, paddingLeft: Math.max(10, cardH * 0.1), background: t.cardBg, borderRadius: `0 ${br}px ${br}px 0`, overflow: 'hidden' }}>
+            {a.image && (
+              <div style={{ flexShrink: 0, height: '80%', display: 'flex', alignItems: 'center' }}>
+                <img src={a.image} alt="" style={{ maxHeight: '100%', maxWidth: cardH * 1.2, objectFit: 'contain', borderRadius: 4 }} />
+              </div>
+            )}
+            <span style={{ fontSize, color: t.text, lineHeight: 1.3, fontFamily: "'Georgia',serif", fontWeight: 400, overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: Math.max(1, Math.floor(cardH / (fontSize * 1.4))), WebkitBoxOrient: 'vertical' }}>{a.text}</span>
           </div>
         ))}
       </div>
@@ -157,18 +176,12 @@ function AnnSlide({ data, h, t }) {
 function MultiSlide({ data, h, t }) {
   const n = data.length;
   const label = multiDayLabel(data);
-  const titleH = 70, bodyH = h - titleH;
-  const gap = Math.max(2, Math.min(8, Math.floor(bodyH / Math.max(n, 1) / 8)));
-  const cardH = n > 0 ? Math.floor((bodyH - gap * (n - 1)) / n) : bodyH;
-  const nameSize = Math.min(44, Math.max(13, cardH * 0.28));
-  const pad = Math.min(18, Math.max(3, cardH * 0.1));
-  const showNotes = cardH > 60;
-  const timeSize = Math.min(52, Math.max(16, cardH * 0.38));
-  const dateSize = Math.min(14, Math.max(9,  cardH * 0.1));
+  const TITLE_H = 66;
+  const { gap, cardH, nameSize, timeSize, noteSize, dateSize, pad, showNotes } = cardMetrics(h - TITLE_H, n);
 
   return (
-    <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', padding: '16px 64px 12px', boxSizing: 'border-box', overflow: 'hidden' }}>
-      <div style={{ height: titleH, flexShrink: 0, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', paddingBottom: 8 }}>
+    <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', padding: '20px 144px 16px', boxSizing: 'border-box', overflow: 'hidden' }}>
+      <div style={{ height: TITLE_H, flexShrink: 0, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', paddingBottom: 8 }}>
         <div style={{ fontSize: 'clamp(28px,4.5vw,56px)', fontFamily: "'Georgia',serif", fontWeight: 700, color: t.text, lineHeight: 1 }}>{label}</div>
         <TitleBar color={t.purple} />
       </div>
@@ -184,16 +197,23 @@ function MultiSlide({ data, h, t }) {
           return (
             <div key={i} style={{ display: 'flex', alignItems: 'stretch', height: cardH, maxHeight: cardH, flexShrink: 0, borderRadius: Math.min(8, cardH * 0.1), overflow: 'hidden', background: t.cardBg }}>
               <div style={{ width: Math.max(3, Math.min(5, cardH * 0.04)), background: c, flexShrink: 0 }} />
-              {e.image && <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: Math.max(3, pad * 0.4), width: cardH * 0.9, maxWidth: '20vw', background: 'rgba(0,0,0,0.1)' }}><img src={e.image} alt="" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', borderRadius: 4 }} /></div>}
+              {e.image && (
+                <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: Math.max(3, pad * 0.4), width: cardH * 0.9, maxWidth: '20vw', background: 'rgba(0,0,0,0.1)' }}>
+                  <img src={e.image} alt="" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', borderRadius: 4 }} />
+                </div>
+              )}
               <div style={{ flex: 1, padding: `${pad * 0.5}px ${pad}px`, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 2, minWidth: 0, overflow: 'hidden' }}>
                 <div style={{ fontSize: nameSize, fontFamily: "'Georgia',serif", fontWeight: 700, color: t.text, lineHeight: 1.1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{e.name}</div>
-                {showNotes && e.notes && <div style={{ fontSize: Math.max(9, nameSize * 0.45), color: t.textMuted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{e.notes}</div>}
+                {showNotes && e.notes && (
+                  <div style={{ fontSize: Math.max(8, noteSize), color: t.textMuted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{e.notes}</div>
+                )}
                 <div style={{ fontSize: dateSize, color: t.textFaint, letterSpacing: 1.5, fontWeight: 500, marginTop: 2 }}>{dateStr}</div>
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: `0 ${Math.max(16, pad * 1.5)}px`, flexShrink: 0 }}>
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
-                  {e.time  && <div style={{ fontSize: timeSize,        fontWeight: 800, color: c,         fontFamily: "'Georgia',serif", whiteSpace: 'nowrap', lineHeight: 1 }}>{e.time}</div>}
-                  {e.timeTo && <div style={{ fontSize: timeSize * 0.65, fontWeight: 600, color: `${c}88`, fontFamily: "'Georgia',serif", whiteSpace: 'nowrap', lineHeight: 1, marginTop: 3 }}>{e.timeTo}</div>}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: `0 ${Math.max(14, pad * 1.5)}px`, flexShrink: 0 }}>
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2 }}>
+                  {e.time   && <div style={{ fontSize: timeSize,        fontWeight: 800, color: c,         fontFamily: "'Georgia',serif", whiteSpace: 'nowrap', lineHeight: 1 }}>{e.time}</div>}
+                  {e.time && e.timeTo && <div style={{ fontSize: timeSize * 0.65, fontWeight: 600, color: `${c}88`, fontFamily: "'Georgia',serif", whiteSpace: 'nowrap', lineHeight: 1 }}>to</div>}
+                  {e.timeTo && <div style={{ fontSize: timeSize * 0.65, fontWeight: 600, color: `${c}88`, fontFamily: "'Georgia',serif", whiteSpace: 'nowrap', lineHeight: 1 }}>{e.timeTo}</div>}
                   {!e.time && !e.timeTo && <div style={{ fontSize: dateSize, color: t.textFaint, fontStyle: 'italic' }}>All day</div>}
                 </div>
               </div>
@@ -272,7 +292,6 @@ export default function PresentPage() {
   const slides  = useMemo(() => bulletin ? buildSlides(bulletin) : [], [bulletin]);
   const total   = slides.length;
 
-  /* preload next slide images */
   useEffect(() => {
     if (!total) return;
     const nx = slides[(index + 1) % total];
@@ -288,7 +307,6 @@ export default function PresentPage() {
   const next = useCallback(() => { if (total) goTo((index + 1) % total); }, [index, total, goTo]);
   const prev = useCallback(() => { if (index > 0) goTo(index - 1); }, [index, goTo]);
 
-  /* timer — reads slideDurationMs which respects overrides + baseline */
   useEffect(() => {
     if (!bulletin || paused || !total) return;
     const d = slideDurationMs(slides[index], bulletin, baseline, multiplier);
@@ -322,12 +340,10 @@ export default function PresentPage() {
         <div style={{ position: 'absolute', top: 10, left: 10, zIndex: 100, background: '#22c55e', color: '#fff', fontSize: 9, fontWeight: 700, padding: '2px 8px', borderRadius: 4, letterSpacing: 1, textTransform: 'uppercase' }}>DEV</div>
       )}
 
-      {/* Progress bar */}
       <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 2, zIndex: 20, background: t.progressBg }}>
         <div style={{ height: '100%', width: `${progress}%`, background: t.gold, transition: 'width 0.05s linear' }} />
       </div>
 
-      {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 64px', flexShrink: 0, zIndex: 10, borderBottom: `1px solid ${t.headerBorder}` }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <span style={{ fontSize: 22, color: t.gold, fontFamily: "'Georgia',serif" }}>✝</span>
@@ -347,7 +363,6 @@ export default function PresentPage() {
         </div>
       </div>
 
-      {/* Slide body */}
       <div ref={bodyRef} onClick={next} style={{ flex: 1, cursor: 'pointer', overflow: 'hidden', minHeight: 0, zIndex: 5 }}>
         {!bulletin ? (
           <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -363,7 +378,6 @@ export default function PresentPage() {
         )}
       </div>
 
-      {/* Footer dots */}
       <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 16, padding: '10px 64px', flexShrink: 0, zIndex: 10, borderTop: `1px solid ${t.footerBorder}` }}>
         <button onClick={e => { e.stopPropagation(); prev(); }} disabled={index === 0}
           style={{ background: 'none', border: 'none', color: index === 0 ? t.dotInactive : t.ctrlColor, fontSize: 18, cursor: index === 0 ? 'default' : 'pointer' }}>‹</button>
