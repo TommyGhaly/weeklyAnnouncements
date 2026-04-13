@@ -26,6 +26,8 @@ import { useAppConfig } from '../../hooks/useAppConfig';
 const repo     = new FirebaseBulletinRepo();
 const exporter = new ReactPDFExporter();
 
+const HISTORY_LIMIT = 50;
+
 function toInputDate(weekLabel) {
   try {
     const d = new Date(weekLabel);
@@ -156,6 +158,10 @@ export default function AdminPanel() {
   const [editingType, setEditingType] = useState(null);
   const [dirty,       setDirty]       = useState(false);
 
+  // ── Undo / redo stacks ────────────────────────────────────
+  const [history, setHistory] = useState([]);
+  const [future,  setFuture]  = useState([]);
+
   const [status,     setStatus]     = useState('');
   const [statusType, setStatusType] = useState('info');
   const [publishing, setPublishing] = useState(false);
@@ -192,9 +198,59 @@ export default function AdminPanel() {
     if (announcementPresets.length > 0) localStorage.setItem('wa_ann_presets', JSON.stringify(announcementPresets));
   }, [announcementPresets]);
 
-  const updater       = editingType === 'template' ? updateTemplate : updateSession;
-  const updateEditing = changes => { setDirty(true); setEditing(b => updater(b, changes)); };
-  const guardUnsaved  = action => {
+  // Clear stacks when opening a different item
+  useEffect(() => { setHistory([]); setFuture([]); }, [editing?.id]);
+
+  const updater = editingType === 'template' ? updateTemplate : updateSession;
+
+  // ── updateEditing — pushes to undo stack ──────────────────
+  const updateEditing = useCallback(changes => {
+    setEditing(current => {
+      setHistory(h => [...h.slice(-(HISTORY_LIMIT - 1)), current]);
+      setFuture([]);
+      setDirty(true);
+      return updater(current, changes);
+    });
+  }, [editingType]);
+
+  // ── Undo ──────────────────────────────────────────────────
+  const undo = useCallback(() => {
+    setHistory(h => {
+      if (!h.length) return h;
+      const prev = h[h.length - 1];
+      setEditing(current => { setFuture(f => [current, ...f.slice(0, HISTORY_LIMIT - 1)]); return prev; });
+      setDirty(true);
+      return h.slice(0, -1);
+    });
+  }, []);
+
+  // ── Redo ──────────────────────────────────────────────────
+  const redo = useCallback(() => {
+    setFuture(f => {
+      if (!f.length) return f;
+      const next = f[0];
+      setEditing(current => { setHistory(h => [...h.slice(-(HISTORY_LIMIT - 1)), current]); return next; });
+      setDirty(true);
+      return f.slice(1);
+    });
+  }, []);
+
+  // ── Keyboard shortcuts ────────────────────────────────────
+  useEffect(() => {
+    const handler = e => {
+      if (!editing) return;
+      // Don't intercept when typing in an input/textarea
+      if (['INPUT', 'TEXTAREA'].includes(e.target.tagName)) return;
+      const ctrl = e.ctrlKey || e.metaKey;
+      if (ctrl && !e.shiftKey && e.key === 'z') { e.preventDefault(); undo(); }
+      if (ctrl &&  e.shiftKey && e.key === 'z') { e.preventDefault(); redo(); }
+      if (ctrl && e.key === 'y')                 { e.preventDefault(); redo(); }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [editing, undo, redo]);
+
+  const guardUnsaved = action => {
     if (dirty) showConfirm({ title: 'Unsaved changes', message: 'Discard unsaved changes?', confirmLabel: 'Discard', confirmColor: '#e67e22', onConfirm: () => { closeConfirm(); setDirty(false); action(); } });
     else action();
   };
@@ -211,22 +267,38 @@ export default function AdminPanel() {
 
   const handleLogoChange = async url => { setLogoUrl(url); await repo.setLogo(url); };
 
+  // Drag handlers also push to history
+  const pushHistory = useCallback(snapshot => {
+    setHistory(h => [...h.slice(-(HISTORY_LIMIT - 1)), snapshot]);
+    setFuture([]);
+    setDirty(true);
+  }, []);
+
   const handleDrop = useCallback((dragData, zoneData) => {
     const { dayIdx } = zoneData;
     setEditing(b => {
       const days = [...b.days];
-      if (dragData.id && dragData.color) { days[dayIdx] = { ...days[dayIdx], events: [...days[dayIdx].events, createEvent(dragData)] }; setDirty(true); return updater(b, { days }); }
-      if (dragData.name === 'New Event') { days[dayIdx] = { ...days[dayIdx], events: [...days[dayIdx].events, createEvent(null, { name: 'New Event' })] }; setDirty(true); return updater(b, { days }); }
+      if (dragData.id && dragData.color) {
+        pushHistory(b);
+        days[dayIdx] = { ...days[dayIdx], events: [...days[dayIdx].events, createEvent(dragData)] };
+        return updater(b, { days });
+      }
+      if (dragData.name === 'New Event') {
+        pushHistory(b);
+        days[dayIdx] = { ...days[dayIdx], events: [...days[dayIdx].events, createEvent(null, { name: 'New Event' })] };
+        return updater(b, { days });
+      }
       if (dragData.event) {
         const { event, dayIdx: fromDay, eventIdx } = dragData;
         if (fromDay === dayIdx) return b;
+        pushHistory(b);
         days[fromDay] = { ...days[fromDay], events: days[fromDay].events.filter((_, i) => i !== eventIdx) };
         days[dayIdx]  = { ...days[dayIdx],  events: [...days[dayIdx].events, event] };
-        setDirty(true); return updater(b, { days });
+        return updater(b, { days });
       }
       return b;
     });
-  }, [editingType]);
+  }, [editingType, pushHistory]);
 
   const handleSort = useCallback((dragData, overData) => {
     const f = dragData.index, t = overData.index;
@@ -239,12 +311,13 @@ export default function AdminPanel() {
     const { dayIdx: toDay,   eventIdx: toIdx   } = overData;
     if (fromDay !== toDay || fromIdx === toIdx) return;
     setEditing(b => {
+      pushHistory(b);
       const days = [...b.days]; const events = [...days[fromDay].events];
       const [moved] = events.splice(fromIdx, 1); events.splice(toIdx, 0, moved);
       days[fromDay] = { ...days[fromDay], events };
-      setDirty(true); return updater(b, { days });
+      return updater(b, { days });
     });
-  }, [editingType]);
+  }, [editingType, pushHistory]);
 
   const save = async () => {
     if (!editing) return;
@@ -309,7 +382,7 @@ export default function AdminPanel() {
   const handleEndSession  = session => { setEndSessionTarget(session); setEndSessionDate(''); setEndSessionMode('restart'); };
   const confirmEndSession = async () => {
     if (!endSessionTarget) return;
-    const session  = endSessionTarget;
+    const session   = endSessionTarget;
     const wasActive = activeBulletinId === session.id;
     if (endSessionMode === 'restart' && endSessionDate) {
       const tmpl = session.templateId ? templates.find(t => t.id === session.templateId) : null;
@@ -446,6 +519,8 @@ export default function AdminPanel() {
 
   const statusColor = { success: '#27ae60', error: '#c0392b', info: '#7a6352' }[statusType];
   const isSession   = editingType === 'session';
+  const canUndo     = history.length > 0;
+  const canRedo     = future.length > 0;
 
   // ── LIST VIEW ─────────────────────────────────────────────
   if (!editing) {
@@ -517,7 +592,6 @@ export default function AdminPanel() {
         </div>
 
         <div style={{ maxWidth: 960, margin: '0 auto', padding: '24px 32px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24, alignItems: 'start' }}>
-
           <div>
             <SectionTitle>Sessions ({sessions.length})</SectionTitle>
             {sessions.length === 0 && <EmptyMsg>No sessions yet.</EmptyMsg>}
@@ -534,8 +608,6 @@ export default function AdminPanel() {
               <SummaryCard key={t.id} item={t} isTemplate onEdit={() => openEditor(t, 'template')} onDelete={() => deleteItem(t, 'template')} />
             ))}
           </div>
-
-          {/* Config panel spanning full width */}
           <div style={{ gridColumn: '1 / -1' }}>
             <Card style={{ border: `1.5px solid ${config.devMode ? '#22c55e55' : '#e8d9c0'}` }}>
               <ConfigPanel />
@@ -552,115 +624,127 @@ export default function AdminPanel() {
 
   return (
     <DragProvider onDrop={handleDrop} onSort={handleSort} onEventReorder={handleEventReorder}>
-      <div style={{ minHeight: '100vh', background: '#f4ece0', fontFamily: 'Inter, sans-serif' }}>
+      {/* Full-viewport shell — nothing scrolls except the content column */}
+      <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', background: '#f4ece0', fontFamily: 'Inter, sans-serif', overflow: 'hidden' }}>
         {config.devMode && <div style={{ position: 'fixed', inset: 0, border: '4px solid #22c55e', pointerEvents: 'none', zIndex: 99999 }} />}
         <ConfirmModal {...confirm} onCancel={closeConfirm} />
         <SaveTemplateModal open={saveTemplateOpen} defaultName={editorName} sourceTemplateId={editing.templateId} templates={templates} onSave={handleSaveAsTemplate} onClose={() => setSaveTemplateOpen(false)} />
 
-        {/* Top header */}
-        <div style={{ background: 'linear-gradient(135deg, #2e1a08 0%, #5c3d1e 100%)', boxShadow: '0 2px 24px rgba(46,26,8,0.3)' }}>
+        {/* Bar 1 — dark, never scrolls */}
+        <div style={{ background: 'linear-gradient(135deg, #2e1a08 0%, #5c3d1e 100%)', boxShadow: '0 2px 24px rgba(46,26,8,0.3)', flexShrink: 0, zIndex: 51 }}>
           <div style={{ maxWidth: 1400, margin: '0 auto', padding: '14px 32px', display: 'flex', alignItems: 'center', gap: 14 }}>
-            <button onClick={backToList} style={{ background: 'none', border: '1px solid rgba(255,255,255,0.15)', color: 'rgba(255,255,255,0.6)', fontSize: 12, cursor: 'pointer', padding: '6px 12px', borderRadius: 6 }}>← Back</button>
-            <div style={{ width: 32, height: 32, borderRadius: '50%', background: 'rgba(212,160,23,0.15)', border: '1.5px solid rgba(212,160,23,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, color: '#d4a017' }}>✝</div>
-            <div style={{ flex: 1 }}>
+            <button onClick={backToList} style={{ background: 'none', border: '1px solid rgba(255,255,255,0.15)', color: 'rgba(255,255,255,0.6)', fontSize: 12, cursor: 'pointer', padding: '6px 12px', borderRadius: 6, flexShrink: 0 }}>← Back</button>
+            <div style={{ width: 32, height: 32, borderRadius: '50%', background: 'rgba(212,160,23,0.15)', border: '1.5px solid rgba(212,160,23,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, color: '#d4a017', flexShrink: 0 }}>✝</div>
+            <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span style={{ color: '#fff', fontSize: 15, fontFamily: 'Playfair Display, serif', fontWeight: 600 }}>{editorName}</span>
-                <span style={{ fontSize: 9, fontWeight: 700, color: isSession ? '#2ecc71' : '#d4a017', background: isSession ? 'rgba(46,204,113,0.15)' : 'rgba(212,160,23,0.15)', padding: '2px 8px', borderRadius: 4, textTransform: 'uppercase', letterSpacing: 0.5 }}>{editingType}</span>
-                {dirty && <span style={{ fontSize: 10, color: '#e67e22' }}>• unsaved</span>}
+                <span style={{ color: '#fff', fontSize: 15, fontFamily: 'Playfair Display, serif', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{editorName}</span>
+                <span style={{ fontSize: 9, fontWeight: 700, color: isSession ? '#2ecc71' : '#d4a017', background: isSession ? 'rgba(46,204,113,0.15)' : 'rgba(212,160,23,0.15)', padding: '2px 8px', borderRadius: 4, textTransform: 'uppercase', letterSpacing: 0.5, flexShrink: 0 }}>{editingType}</span>
+                {dirty && <span style={{ fontSize: 10, color: '#e67e22', flexShrink: 0 }}>• unsaved</span>}
               </div>
               {isSession && editing.weekLabel && <div style={{ color: 'rgba(255,255,255,0.35)', fontSize: 11 }}>Week of {editing.weekLabel}</div>}
             </div>
-            {config.devMode && <span style={{ fontSize: 10, fontWeight: 700, color: '#22c55e', background: 'rgba(34,197,94,0.1)', padding: '3px 10px', borderRadius: 4, border: '1px solid rgba(34,197,94,0.3)', letterSpacing: 1, textTransform: 'uppercase' }}>Dev Mode</span>}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            {config.devMode && <span style={{ fontSize: 10, fontWeight: 700, color: '#22c55e', background: 'rgba(34,197,94,0.1)', padding: '3px 10px', borderRadius: 4, border: '1px solid rgba(34,197,94,0.3)', letterSpacing: 1, textTransform: 'uppercase', flexShrink: 0 }}>Dev Mode</span>}
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
               <span style={{ fontSize: 11, color: '#b0956e', fontWeight: 600 }}>Logo</span>
               <ImagePicker value={logoUrl} onChange={handleLogoChange} />
             </div>
-            <a href="/" style={{ color: 'rgba(255,255,255,0.4)', fontSize: 12, textDecoration: 'none', padding: '6px 12px', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 6 }}>Present →</a>
+            <a href="/" style={{ color: 'rgba(255,255,255,0.4)', fontSize: 12, textDecoration: 'none', padding: '6px 12px', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 6, flexShrink: 0 }}>Present →</a>
           </div>
         </div>
 
-        {/* Meta bar */}
-        <div style={{ background: '#fff', borderBottom: '1.5px solid #e8d9c0', boxShadow: '0 1px 6px rgba(92,61,30,0.07)' }}>
-          <div style={{ maxWidth: 1400, margin: '0 auto', padding: '10px 32px', display: 'flex', gap: 14, alignItems: 'center', flexWrap: 'wrap' }}>
+        {/* Bar 2 — white, never scrolls */}
+        <div style={{ background: '#fff', borderBottom: '1.5px solid #e8d9c0', boxShadow: '0 1px 6px rgba(92,61,30,0.07)', flexShrink: 0, zIndex: 50 }}>
+          <div style={{ maxWidth: 1400, margin: '0 auto', padding: '8px 32px', display: 'flex', gap: 8, alignItems: 'center' }}>
+
+            {/* Undo / Redo */}
+            <div style={{ display: 'flex', gap: 2, flexShrink: 0 }}>
+              <button onClick={undo} disabled={!canUndo}
+                title={`Undo (${navigator.platform.includes('Mac') ? '⌘' : 'Ctrl'}+Z) · ${history.length} step${history.length !== 1 ? 's' : ''}`}
+                style={{ padding: '5px 9px', fontSize: 13, fontWeight: 700, lineHeight: 1, background: canUndo ? '#fdf6ec' : 'transparent', border: '1.5px solid #e0cba8', borderRadius: '6px 0 0 6px', color: canUndo ? '#5c3d1e' : '#d0b88a', cursor: canUndo ? 'pointer' : 'default', transition: 'all 0.15s' }}
+              >←</button>
+              <button onClick={redo} disabled={!canRedo}
+                title={`Redo (${navigator.platform.includes('Mac') ? '⌘' : 'Ctrl'}+Shift+Z) · ${future.length} step${future.length !== 1 ? 's' : ''}`}
+                style={{ padding: '5px 9px', fontSize: 13, fontWeight: 700, lineHeight: 1, background: canRedo ? '#fdf6ec' : 'transparent', border: '1.5px solid #e0cba8', borderLeft: 'none', borderRadius: '0 6px 6px 0', color: canRedo ? '#5c3d1e' : '#d0b88a', cursor: canRedo ? 'pointer' : 'default', transition: 'all 0.15s' }}
+              >→</button>
+            </div>
+
+            <div style={{ width: 1, height: 16, background: '#e0cba8', flexShrink: 0 }} />
+
             <input value={editorName} onChange={e => setEditorName(e.target.value)}
-              style={{ fontSize: 15, fontFamily: 'Playfair Display, serif', fontWeight: 600, border: 'none', background: 'transparent', color: '#3d2408', outline: 'none', minWidth: 160 }} />
+              style={{ fontSize: 14, fontFamily: 'Playfair Display, serif', fontWeight: 600, border: 'none', background: 'transparent', color: '#3d2408', outline: 'none', minWidth: 80, maxWidth: 220, flexShrink: 1 }} />
 
             {isSession && <>
-              <div style={{ width: 1, height: 20, background: '#e0cba8' }} />
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span style={{ fontSize: 11, color: '#b0956e', fontWeight: 600 }}>Week of</span>
-                <input type="date" value={toInputDate(editing.weekLabel)}
-                  onChange={e => {
-                    const d = new Date(e.target.value + 'T00:00:00');
-                    if (isNaN(d)) return;
-                    const label = d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
-                    const ALL_DAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
-                    const toISO = dt => `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`;
-                    const pickedDow = d.getDay();
-                    setEditing(b => {
-                      if (!b.days.length) return updateSession(b, { weekLabel: label });
-                      let anchorIdx = b.days.findIndex(day => ALL_DAYS.indexOf(day.day) === pickedDow);
-                      if (anchorIdx === -1) anchorIdx = 0;
-                      const anchorDow = ALL_DAYS.indexOf(b.days[anchorIdx].day);
-                      let anchorOffset = anchorDow - pickedDow;
-                      if (anchorOffset > 3) anchorOffset -= 7;
-                      if (anchorOffset < -3) anchorOffset += 7;
-                      const anchorDate = new Date(d); anchorDate.setDate(anchorDate.getDate() + anchorOffset);
-                      const updatedDays = [];
-                      for (let i = 0; i < b.days.length; i++) {
-                        const day = b.days[i];
-                        if (i === anchorIdx) { updatedDays.push({ ...day, date: toISO(anchorDate) }); continue; }
-                        const dayDow = ALL_DAYS.indexOf(day.day);
-                        let offset = dayDow - anchorDow;
-                        if (i < anchorIdx && offset > 0) offset -= 7;
-                        if (i > anchorIdx && offset < 0) offset += 7;
-                        const dayDate = new Date(anchorDate); dayDate.setDate(dayDate.getDate() + offset);
-                        updatedDays.push({ ...day, date: toISO(dayDate) });
-                      }
-                      setDirty(true);
-                      return updateSession(b, { weekLabel: label, days: updatedDays });
-                    });
-                  }}
-                  style={{ fontSize: 12, padding: '5px 8px', border: '1.5px solid #e0cba8', borderRadius: 7, background: '#fdf6ec', color: '#5c3d1e', outline: 'none' }} />
-              </div>
+              <div style={{ width: 1, height: 16, background: '#e0cba8', flexShrink: 0 }} />
+              <span style={{ fontSize: 10, color: '#b0956e', fontWeight: 600, flexShrink: 0 }}>Week of</span>
+              <input type="date" value={toInputDate(editing.weekLabel)}
+                onChange={e => {
+                  const d = new Date(e.target.value + 'T00:00:00');
+                  if (isNaN(d)) return;
+                  const label = d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+                  const ALL_DAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+                  const toISO = dt => `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`;
+                  const pickedDow = d.getDay();
+                  setEditing(b => {
+                    if (!b.days.length) return updateSession(b, { weekLabel: label });
+                    let anchorIdx = b.days.findIndex(day => ALL_DAYS.indexOf(day.day) === pickedDow);
+                    if (anchorIdx === -1) anchorIdx = 0;
+                    const anchorDow = ALL_DAYS.indexOf(b.days[anchorIdx].day);
+                    let anchorOffset = anchorDow - pickedDow;
+                    if (anchorOffset > 3) anchorOffset -= 7;
+                    if (anchorOffset < -3) anchorOffset += 7;
+                    const anchorDate = new Date(d); anchorDate.setDate(anchorDate.getDate() + anchorOffset);
+                    const updatedDays = [];
+                    for (let i = 0; i < b.days.length; i++) {
+                      const day = b.days[i];
+                      if (i === anchorIdx) { updatedDays.push({ ...day, date: toISO(anchorDate) }); continue; }
+                      const dayDow = ALL_DAYS.indexOf(day.day);
+                      let offset = dayDow - anchorDow;
+                      if (i < anchorIdx && offset > 0) offset -= 7;
+                      if (i > anchorIdx && offset < 0) offset += 7;
+                      const dayDate = new Date(anchorDate); dayDate.setDate(dayDate.getDate() + offset);
+                      updatedDays.push({ ...day, date: toISO(dayDate) });
+                    }
+                    setDirty(true);
+                    return updateSession(b, { weekLabel: label, days: updatedDays });
+                  });
+                }}
+                style={{ fontSize: 10, padding: '2px 4px', border: '1.5px solid #e0cba8', borderRadius: 5, background: '#fdf6ec', color: '#5c3d1e', outline: 'none', flexShrink: 0, width: 112 }} />
             </>}
 
             <div style={{ flex: 1 }} />
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              <button onClick={save} disabled={saving} style={teleBtn(saving, '#b8860b', '#d4a017')}>
-                {saving ? 'Saving...' : dirty ? 'Save *' : 'Save'}
+
+            <button onClick={save} disabled={saving} style={teleBtn(saving, '#b8860b', '#d4a017')}>
+              {saving ? 'Saving...' : dirty ? 'Save *' : 'Save'}
+            </button>
+            {isSession && <button onClick={() => setSaveTemplateOpen(true)} style={{ padding: '7px 14px', background: '#f4ece0', border: '1px solid #e0cba8', borderRadius: 8, fontSize: 12, color: '#5c3d1e', cursor: 'pointer', whiteSpace: 'nowrap' }}>Save as Template</button>}
+            {isSession && (
+              <button onClick={() => setAsPresentation()} style={{ padding: '7px 14px', background: activeBulletinId === editing.id ? '#27ae60' : '#2c3e50', color: '#fff', border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5, whiteSpace: 'nowrap' }}>
+                {activeBulletinId === editing.id && <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#fff', boxShadow: '0 0 5px #fff8' }} />}
+                {activeBulletinId === editing.id ? 'Presenting' : '📺 Present'}
               </button>
-              {isSession && <button onClick={() => setSaveTemplateOpen(true)} style={{ padding: '7px 16px', background: '#f4ece0', border: '1px solid #e0cba8', borderRadius: 8, fontSize: 12, color: '#5c3d1e', cursor: 'pointer' }}>Save as Template</button>}
-              {isSession && (
-                <button onClick={() => setAsPresentation()} style={{ padding: '7px 16px', background: activeBulletinId === editing.id ? '#27ae60' : '#2c3e50', color: '#fff', border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5 }}>
-                  {activeBulletinId === editing.id && <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#fff', boxShadow: '0 0 5px #fff8' }} />}
-                  {activeBulletinId === editing.id ? 'Presenting' : '📺 Present'}
-                </button>
-              )}
-              {status && <span style={{ fontSize: 12, color: statusColor, fontWeight: 500 }}>{status}</span>}
-            </div>
+            )}
+            {status && <span style={{ fontSize: 12, color: statusColor, fontWeight: 500, whiteSpace: 'nowrap' }}>{status}</span>}
           </div>
         </div>
 
-        {/* Main grid */}
-        <div style={{ maxWidth: 1400, margin: '0 auto', padding: '24px 32px', display: 'grid', gridTemplateColumns: '280px 1fr', gap: 24, alignItems: 'start' }}>
+        {/* Body — fills remaining height, never itself scrolls */}
+        <div style={{ flex: 1, display: 'flex', overflow: 'hidden', maxWidth: 1400, width: '100%', margin: '0 auto', padding: '0 32px', boxSizing: 'border-box', gap: 24 }}>
 
-          {/* Sidebar */}
-          <div style={{ position: 'sticky', top: 24, maxHeight: 'calc(100vh - 120px)', overflowY: 'auto', scrollbarWidth: 'thin', display: 'flex', flexDirection: 'column', gap: 14 }}>
+          {/* Sidebar — fixed in place, scrolls internally */}
+          <div style={{ width: 280, flexShrink: 0, overflowY: 'auto', scrollbarWidth: 'thin', display: 'flex', flexDirection: 'column', gap: 14, padding: '24px 0' }}>
             <Card><PresetLibrary presets={presets} onAdd={addPreset} onEdit={editPreset} onDelete={removePreset} onReorder={reorderPresets} /></Card>
             <Card><AnnouncementPresetLibrary presets={announcementPresets} onAdd={addAnnFromPreset} onEdit={editAnnPreset} onDelete={removeAnnPreset} onAddNew={addAnnPreset} /></Card>
             <Card style={{ border: `1.5px solid ${config.devMode ? '#22c55e55' : '#e8d9c0'}` }}><ConfigPanel /></Card>
           </div>
 
-          {/* Content column */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+          {/* Content — only this scrolls */}
+          <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 18, padding: '24px 0' }}>
             {isSession && (
               <TelegramBar session={editing} publishing={publishing} devMode={config.devMode}
                 onPublish={publish} onRepublish={republish} onUndo={undoSend}
                 onPublishAnnouncements={publishAnnouncements} onUndoAnnouncements={undoAnnouncements} />
             )}
 
-            {/* Header Notes */}
             <Card>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
                 <SectionTitle>Header Notes</SectionTitle>
@@ -679,24 +763,20 @@ export default function AdminPanel() {
               ))}
             </Card>
 
-            {/* Weekly Schedule */}
             <Card>
               <SectionTitle style={{ marginBottom: 16 }}>Weekly Schedule</SectionTitle>
               <WeeklyView bulletin={editing} onUpdateBulletin={b => { setDirty(true); setEditing(updater(b, {})); }} presets={presets} />
             </Card>
 
-            {/* Extras */}
             <Card>
               <ExtrasPanel bulletin={editing} onChange={b => { setDirty(true); setEditing(updater(b, {})); }} />
             </Card>
 
-            {/* Slide Images */}
             <Card>
               <SlideImagesPanel slideImages={editing.slideImages ?? []} onChange={imgs => updateEditing({ slideImages: imgs })} />
             </Card>
 
-            {/* Slide Timings */}
-            <Card>
+            <Card style={{ marginBottom: 24 }}>
               <SlideTimingsPanel bulletin={editing} onChange={changes => updateEditing(changes)} />
             </Card>
           </div>

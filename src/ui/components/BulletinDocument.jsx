@@ -70,7 +70,7 @@ export const BulletinDocument = ({ bulletin, logoUrl, imageMap }) => {
   const days = (bulletin.days ?? []).filter(d => d.events?.length > 0);
 
   return (
-    <Document>
+    <Document title={bulletin.presetName ?? 'Weekly Bulletin'}>
       <Page size="A4" style={s.page}>
         {/* Header */}
         <View style={s.hdr}>

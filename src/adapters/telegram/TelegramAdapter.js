@@ -3,6 +3,8 @@ import { db } from '../../firebase';
 import { NotificationPort } from '../../core/ports/NotificationPort';
 import { CHURCH_NAME } from '../../core/domain/Bulletin';
 
+const DIV = '━━━━━━━━━━━━━━━';
+
 export class TelegramAdapter extends NotificationPort {
   constructor(devMode = false) {
     super();
@@ -30,12 +32,13 @@ export class TelegramAdapter extends NotificationPort {
     const ids = [];
     const digest = this.formatDigest(bulletin);
     const header = `✝ *${CHURCH_NAME}* — ${bulletin.presetName}\n🗓 Week of ${bulletin.weekLabel}`;
+    const filename = `${bulletin.presetName ?? 'Weekly Bulletin'}.pdf`;
 
     if (digest.length <= 1024) {
-      const id = await this._sendDocument(pdfBlob, digest);
+      const id = await this._sendDocument(pdfBlob, filename, digest);
       if (id) ids.push(id);
     } else {
-      const id = await this._sendDocument(pdfBlob, header);
+      const id = await this._sendDocument(pdfBlob, filename, header);
       if (id) ids.push(id);
       const mids = await this._sendLongMessage(digest);
       ids.push(...mids);
@@ -48,7 +51,6 @@ export class TelegramAdapter extends NotificationPort {
     if (!anns.length) return [];
     const ids = [];
 
-    // Announcements with images: send as photo+caption (no repeat in text block)
     const withImage    = anns.filter(a => a.image);
     const withoutImage = anns.filter(a => !a.image);
 
@@ -58,7 +60,6 @@ export class TelegramAdapter extends NotificationPort {
         const id = await this._sendPhoto(a.image, caption);
         if (id) ids.push(id);
       } else {
-        // Photo with truncated caption + full text as follow-up message
         const id = await this._sendPhoto(a.image, caption.slice(0, 1021) + '…');
         if (id) ids.push(id);
         const tid = await this._sendMessage(caption);
@@ -66,7 +67,6 @@ export class TelegramAdapter extends NotificationPort {
       }
     }
 
-    // Text-only announcements go in one message block
     if (withoutImage.length) {
       const lines = [
         `✝ *${CHURCH_NAME}*`,
@@ -127,10 +127,10 @@ export class TelegramAdapter extends NotificationPort {
     }
   }
 
-  async _sendDocument(pdfBlob, caption) {
+  async _sendDocument(pdfBlob, filename, caption) {
     const form = new FormData();
     form.append('chat_id',    this.chatId);
-    form.append('document',   pdfBlob, 'weekly-bulletin.pdf');
+    form.append('document',   pdfBlob, filename);
     form.append('caption',    caption.slice(0, 1024));
     form.append('parse_mode', 'Markdown');
     const res = await fetch(`${this.base}/sendDocument`, { method: 'POST', body: form });
@@ -243,7 +243,7 @@ export class TelegramAdapter extends NotificationPort {
       }
     }
 
-    lines.push(``, `━━━━━━━━━━━━━━━`, ``);
+    lines.push(``, DIV, ``);
 
     const multiDay = (bulletin.multiDayEvents ?? []).filter(e => e.name);
     if (multiDay.length) {
@@ -265,14 +265,14 @@ export class TelegramAdapter extends NotificationPort {
         }
         lines.push(``);
       }
-      lines.push(`━━━━━━━━━━━━━━━`, ``);
+      lines.push(DIV, ``);
     }
 
     const anns = (bulletin.announcements ?? []).filter(a => a.text?.trim());
     if (anns.length) {
       lines.push(`📢 *Announcements*`, ``);
       for (const a of anns) lines.push(`   • ${a.text}`);
-      lines.push(``, `━━━━━━━━━━━━━━━`, ``);
+      lines.push(``, DIV, ``);
     }
 
     for (const day of bulletin.days ?? []) {
@@ -291,7 +291,7 @@ export class TelegramAdapter extends NotificationPort {
         }
         lines.push(``);
       }
-      lines.push(`━━━━━━━━━━━━━━━━━━━━`, ``);
+      lines.push(DIV, ``);
     }
 
     return lines.join('\n');

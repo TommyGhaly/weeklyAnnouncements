@@ -71,8 +71,7 @@ function TitleBar({ color }) {
   );
 }
 
-// Single source of truth: all card/font/spacing derived from available body height and item count.
-// Title fonts are intentionally excluded — those stay fixed via clamp() in each slide.
+// Single source of truth for card metrics derived from available body height and item count.
 function cardMetrics(bodyH, n) {
   const gap   = Math.max(2, Math.min(6, Math.floor(bodyH / Math.max(n, 1) / 10)));
   const cardH = n > 0 ? Math.floor((bodyH - gap * (n - 1)) / n * 0.85) : Math.floor(bodyH * 0.85);
@@ -85,7 +84,10 @@ function cardMetrics(bodyH, n) {
   const br       = Math.min(8,  cardH * 0.08);
   const showNotes    = cardH > 52;
   const showContacts = cardH > 70;
-  return { gap, cardH, nameSize, timeSize, noteSize, dateSize, pad, barW, br, showNotes, showContacts };
+  // How many lines of the event name fit given the card height and font size
+  // lineHeight factor of 1.2 is tight but fits better in cards
+  const nameLines = Math.max(1, Math.floor((cardH * 0.65) / (nameSize * 1.2)));
+  return { gap, cardH, nameSize, timeSize, noteSize, dateSize, pad, barW, br, showNotes, showContacts, nameLines };
 }
 
 function DaySlide({ data, h, t }) {
@@ -94,7 +96,7 @@ function DaySlide({ data, h, t }) {
   const dt = fmtD(data.date, { weekday: 'long', month: 'long', day: 'numeric' });
 
   const TITLE_H = 86;
-  const { gap, cardH, nameSize, timeSize, noteSize, pad, showNotes, showContacts } = cardMetrics(h - TITLE_H, n);
+  const { gap, cardH, nameSize, timeSize, noteSize, pad, showNotes, showContacts, nameLines } = cardMetrics(h - TITLE_H, n);
 
   return (
     <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', padding: '20px 144px 16px', boxSizing: 'border-box', overflow: 'hidden' }}>
@@ -117,9 +119,25 @@ function DaySlide({ data, h, t }) {
                 </div>
               )}
               <div style={{ flex: 1, padding: `${pad * 0.5}px ${pad}px`, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 1, minWidth: 0, overflow: 'hidden' }}>
-                <div style={{ fontSize: nameSize, fontFamily: "'Georgia',serif", fontWeight: 700, color: t.text, lineHeight: 1.1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{ev.name}</div>
+                {/* Name: allow wrapping up to nameLines, then ellipsis */}
+                <div style={{
+                  fontSize: nameSize,
+                  fontFamily: "'Georgia',serif",
+                  fontWeight: 700,
+                  color: t.text,
+                  lineHeight: 1.2,
+                  overflow: 'hidden',
+                  display: '-webkit-box',
+                  WebkitLineClamp: nameLines,
+                  WebkitBoxOrient: 'vertical',
+                  wordBreak: 'break-word',
+                }}>
+                  {ev.name}
+                </div>
                 {showNotes && ev.notes && (
-                  <div style={{ fontSize: noteSize, color: t.textMuted, lineHeight: 1.3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{ev.notes}</div>
+                  <div style={{ fontSize: noteSize, color: t.textMuted, lineHeight: 1.3, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', wordBreak: 'break-word' }}>
+                    {ev.notes}
+                  </div>
                 )}
                 {showContacts && (ev.contacts ?? []).length > 0 && (
                   <div style={{ display: 'flex', gap: 12, flexWrap: 'nowrap', overflow: 'hidden' }}>
@@ -149,7 +167,7 @@ function DaySlide({ data, h, t }) {
 function AnnSlide({ data, h, t }) {
   const n = data.length;
   const TITLE_H = 86;
-  const { gap, cardH, nameSize: fontSize, pad, barW, br } = cardMetrics(h - TITLE_H, n);
+  const { gap, cardH, nameSize: fontSize, pad, barW, br, nameLines } = cardMetrics(h - TITLE_H, n);
 
   return (
     <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', padding: '20px 144px 16px', boxSizing: 'border-box', overflow: 'hidden' }}>
@@ -165,7 +183,20 @@ function AnnSlide({ data, h, t }) {
                 <img src={a.image} alt="" style={{ maxHeight: '100%', maxWidth: cardH * 1.2, objectFit: 'contain', borderRadius: 4 }} />
               </div>
             )}
-            <span style={{ fontSize, color: t.text, lineHeight: 1.3, fontFamily: "'Georgia',serif", fontWeight: 400, overflow: 'hidden', textOverflow: 'ellipsis', display: '-webkit-box', WebkitLineClamp: Math.max(1, Math.floor(cardH / (fontSize * 1.4))), WebkitBoxOrient: 'vertical' }}>{a.text}</span>
+            <span style={{
+              fontSize,
+              color: t.text,
+              lineHeight: 1.3,
+              fontFamily: "'Georgia',serif",
+              fontWeight: 400,
+              overflow: 'hidden',
+              display: '-webkit-box',
+              WebkitLineClamp: nameLines,
+              WebkitBoxOrient: 'vertical',
+              wordBreak: 'break-word',
+            }}>
+              {a.text}
+            </span>
           </div>
         ))}
       </div>
@@ -177,7 +208,7 @@ function MultiSlide({ data, h, t }) {
   const n = data.length;
   const label = multiDayLabel(data);
   const TITLE_H = 66;
-  const { gap, cardH, nameSize, timeSize, noteSize, dateSize, pad, showNotes } = cardMetrics(h - TITLE_H, n);
+  const { gap, cardH, nameSize, timeSize, noteSize, dateSize, pad, showNotes, nameLines } = cardMetrics(h - TITLE_H, n);
 
   return (
     <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', padding: '20px 144px 16px', boxSizing: 'border-box', overflow: 'hidden' }}>
@@ -203,9 +234,25 @@ function MultiSlide({ data, h, t }) {
                 </div>
               )}
               <div style={{ flex: 1, padding: `${pad * 0.5}px ${pad}px`, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 2, minWidth: 0, overflow: 'hidden' }}>
-                <div style={{ fontSize: nameSize, fontFamily: "'Georgia',serif", fontWeight: 700, color: t.text, lineHeight: 1.1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{e.name}</div>
+                {/* Name: wrap up to nameLines */}
+                <div style={{
+                  fontSize: nameSize,
+                  fontFamily: "'Georgia',serif",
+                  fontWeight: 700,
+                  color: t.text,
+                  lineHeight: 1.2,
+                  overflow: 'hidden',
+                  display: '-webkit-box',
+                  WebkitLineClamp: nameLines,
+                  WebkitBoxOrient: 'vertical',
+                  wordBreak: 'break-word',
+                }}>
+                  {e.name}
+                </div>
                 {showNotes && e.notes && (
-                  <div style={{ fontSize: Math.max(8, noteSize), color: t.textMuted, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{e.notes}</div>
+                  <div style={{ fontSize: Math.max(8, noteSize), color: t.textMuted, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', wordBreak: 'break-word' }}>
+                    {e.notes}
+                  </div>
                 )}
                 <div style={{ fontSize: dateSize, color: t.textFaint, letterSpacing: 1.5, fontWeight: 500, marginTop: 2 }}>{dateStr}</div>
               </div>
