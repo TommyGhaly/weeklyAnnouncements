@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { FirebaseBulletinRepo } from '../../adapters/firebase/FirebaseBulletinRepo';
 import { ReactPDFExporter } from '../../adapters/export/ReactPDFExporter.jsx';
 import { TelegramAdapter } from '../../adapters/telegram/TelegramAdapter';
@@ -161,6 +161,10 @@ export default function AdminPanel() {
   // ── Undo / redo stacks ────────────────────────────────────
   const [history, setHistory] = useState([]);
   const [future,  setFuture]  = useState([]);
+  const editingRef = useRef(null);
+  useEffect(() => {
+    editingRef.current = editing;
+  }, [editing]);
 
   const [status,     setStatus]     = useState('');
   const [statusType, setStatusType] = useState('info');
@@ -201,24 +205,36 @@ export default function AdminPanel() {
   // Clear stacks when opening a different item
   useEffect(() => { setHistory([]); setFuture([]); }, [editing?.id]);
 
-  const updater = editingType === 'template' ? updateTemplate : updateSession;
-
+  const updater = useCallback(
+    (current, changes) => (editingType === 'template' ? updateTemplate : updateSession)(current, changes),
+    [editingType]
+  );
   // ── updateEditing — pushes to undo stack ──────────────────
   const updateEditing = useCallback(changes => {
     setEditing(current => {
+      if (!current) return current;
       setHistory(h => [...h.slice(-(HISTORY_LIMIT - 1)), current]);
       setFuture([]);
       setDirty(true);
       return updater(current, changes);
     });
-  }, [editingType]);
+  }, [updater]);
+
+  // ── updateEditingDirect — for full object updates (also pushes to undo stack) ──────────────────
+  const updateEditingDirect = useCallback(newEditing => {
+    setHistory(h => [...h.slice(-(HISTORY_LIMIT - 1)), editingRef.current]);
+    setFuture([]);
+    setDirty(true);
+    setEditing(newEditing);
+  }, []);
 
   // ── Undo ──────────────────────────────────────────────────
   const undo = useCallback(() => {
     setHistory(h => {
       if (!h.length) return h;
       const prev = h[h.length - 1];
-      setEditing(current => { setFuture(f => [current, ...f.slice(0, HISTORY_LIMIT - 1)]); return prev; });
+      setEditing(prev);
+      setFuture(f => [editingRef.current, ...f.slice(0, HISTORY_LIMIT - 1)]);
       setDirty(true);
       return h.slice(0, -1);
     });
@@ -229,7 +245,8 @@ export default function AdminPanel() {
     setFuture(f => {
       if (!f.length) return f;
       const next = f[0];
-      setEditing(current => { setHistory(h => [...h.slice(-(HISTORY_LIMIT - 1)), current]); return next; });
+      setEditing(next);
+      setHistory(h => [...h.slice(-(HISTORY_LIMIT - 1)), editingRef.current]);
       setDirty(true);
       return f.slice(1);
     });
@@ -765,11 +782,11 @@ export default function AdminPanel() {
 
             <Card>
               <SectionTitle style={{ marginBottom: 16 }}>Weekly Schedule</SectionTitle>
-              <WeeklyView bulletin={editing} onUpdateBulletin={b => { setDirty(true); setEditing(updater(b, {})); }} presets={presets} />
+              <WeeklyView bulletin={editing} onUpdateBulletin={updateEditingDirect} presets={presets} />
             </Card>
 
             <Card>
-              <ExtrasPanel bulletin={editing} onChange={b => { setDirty(true); setEditing(updater(b, {})); }} />
+              <ExtrasPanel bulletin={editing} onChange={updateEditingDirect} />
             </Card>
 
             <Card>
