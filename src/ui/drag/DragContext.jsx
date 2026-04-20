@@ -6,6 +6,7 @@ export const useDragCtx = () => useContext(Ctx);
 export default function DragProvider({ children, onDrop, onSort, onEventReorder }) {
   const [dragging, setDragging] = useState(null);
   const [overZone, setOverZone] = useState(null);
+  const [overSort, setOverSort] = useState(null); // { id, position: 'before'|'after' }
   const zonesRef = useRef(new Map());
   const sortZonesRef = useRef(new Map());
   const frameRef = useRef(null);
@@ -40,12 +41,31 @@ export default function DragProvider({ children, onDrop, onSort, onEventReorder 
       cancelAnimationFrame(frameRef.current);
       frameRef.current = requestAnimationFrame(() => {
         setDragging(d => d ? { ...d, x, y } : null);
-        let found = null;
+
+        // Day zone highlight
+        let foundZone = null;
         for (const [id, { el }] of zonesRef.current) {
           const r = el.getBoundingClientRect();
-          if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) { found = id; break; }
+          if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) { foundZone = id; break; }
         }
-        setOverZone(found);
+        setOverZone(foundZone);
+
+        // Sort indicator — only for reorder drags
+        const t = dragging.type;
+        if (t === 'event-sort' || t === 'sort') {
+          let foundSort = null;
+          for (const [id, { el }] of sortZonesRef.current) {
+            const r = el.getBoundingClientRect();
+            if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) {
+              const mid = r.top + r.height / 2;
+              foundSort = { id, position: y < mid ? 'before' : 'after' };
+              break;
+            }
+          }
+          setOverSort(foundSort);
+        } else {
+          setOverSort(null);
+        }
       });
     };
 
@@ -53,22 +73,21 @@ export default function DragProvider({ children, onDrop, onSort, onEventReorder 
       const x = e.clientX, y = e.clientY;
       cancelAnimationFrame(frameRef.current);
 
-      if (dragging.type === 'sort') {
-        // Preset library reorder
-        const target = hitTest(sortZonesRef.current, x, y);
-        if (target) onSort?.(dragging.data, target);
-      } else if (dragging.type === 'event-sort') {
-        // Event reorder within a day
-        const target = hitTest(sortZonesRef.current, x, y);
-        if (target) onEventReorder?.(dragging.data, target);
+      const sortTarget = hitTest(sortZonesRef.current, x, y);
+      const dayTarget  = hitTest(zonesRef.current, x, y);
+
+      if (dragging.type === 'event-sort') {
+        if (sortTarget) onEventReorder?.(dragging.data, sortTarget);
+        else if (dayTarget) onDrop?.(dragging.data, dayTarget);
+      } else if (dragging.type === 'sort') {
+        if (sortTarget) onSort?.(dragging.data, sortTarget);
       } else {
-        // Preset/event drop onto a day
-        const target = hitTest(zonesRef.current, x, y);
-        if (target) onDrop?.(dragging.data, target);
+        if (dayTarget) onDrop?.(dragging.data, dayTarget);
       }
 
       setDragging(null);
       setOverZone(null);
+      setOverSort(null);
     };
 
     window.addEventListener('mousemove', onMove);
@@ -81,7 +100,7 @@ export default function DragProvider({ children, onDrop, onSort, onEventReorder 
   }, [dragging, onDrop, onSort, onEventReorder]);
 
   return (
-    <Ctx.Provider value={{ dragging, overZone, startDrag, registerZone, registerSortZone }}>
+    <Ctx.Provider value={{ dragging, overZone, overSort, startDrag, registerZone, registerSortZone }}>
       {children}
       {dragging && (
         <div style={{
@@ -103,7 +122,7 @@ export default function DragProvider({ children, onDrop, onSort, onEventReorder 
         }}>
           <div style={{ width: 8, height: 8, borderRadius: '50%', background: dragging.data.color ?? '#b8860b', flexShrink: 0 }} />
           <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-            {dragging.data.name ?? dragging.data.event?.name ?? 'Event'}
+            {dragging.data.name ?? dragging.data.event?.name ?? dragging.data.preset?.name ?? 'Event'}
           </span>
         </div>
       )}

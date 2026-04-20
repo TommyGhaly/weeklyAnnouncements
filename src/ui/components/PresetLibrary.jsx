@@ -11,9 +11,11 @@ const COLORS = ['#b8860b','#7a5230','#4a7c59','#1a5276','#6d3b8e','#8b4513','#c0
 function PresetCard({ preset, index, total, onEdit, onDelete }) {
   const { onMouseDown: onDayDrag, isDragging } = useDrag('preset', preset);
   const { onMouseDown: onSortDrag } = useDrag('sort', { preset, index });
-  const { dragging, registerSortZone } = useDragCtx();
+  const { dragging, overSort, registerSortZone } = useDragCtx();
   const cardRef = useRef(null);
   const isSortDragging = dragging?.type === 'sort' && dragging?.data?.preset?.id === preset.id;
+  const indicator = overSort?.id === `sort-${preset.id}` && dragging?.type === 'sort' && !isSortDragging
+    ? overSort.position : null;
 
   useEffect(() => {
     registerSortZone(`sort-${preset.id}`, cardRef.current, { preset, index });
@@ -21,51 +23,51 @@ function PresetCard({ preset, index, total, onEdit, onDelete }) {
   }, [preset, index, registerSortZone]);
 
   return (
-    <div
-      ref={cardRef}
-      style={{
-      background: '#fff',
-      border: `1.5px solid #e8d9c0`,
-      borderLeft: `4px solid ${preset.color}`,
-      borderRadius: 10, overflow: 'hidden',
-      boxShadow: isDragging || isSortDragging ? '0 8px 24px rgba(92,61,30,0.15)' : '0 1px 4px rgba(92,61,30,0.07)',
-      opacity: isDragging || isSortDragging ? 0.4 : 1,
-      marginBottom: 8, userSelect: 'none',
-    }}>
-      {preset.image && (
-        <div style={{ height: 56, position: 'relative', overflow: 'hidden' }}>
-          <img src={preset.image} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-          <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to bottom, transparent 40%, rgba(0,0,0,0.4))' }} />
-        </div>
-      )}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 12px' }}>
-        {/* Sort handle */}
-        <div
-          onMouseDown={onSortDrag}
-          style={{ color: '#d0b88a', fontSize: 16, cursor: 'grab', flexShrink: 0, lineHeight: 1, touchAction: 'none', padding: '0 2px' }}
-          title="Drag to reorder"
-        >⠿</div>
-
-        {/* Card body — drag to day */}
-        <div
-          onMouseDown={onDayDrag}
-          style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0, cursor: 'grab' }}
-          title="Drag to schedule on a day"
-        >
-          <div style={{ width: 10, height: 10, borderRadius: '50%', background: preset.color, flexShrink: 0 }} />
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 13, fontWeight: 600, color: '#3d2408', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{preset.name}</div>
-            {(preset.defaultTime || preset.defaultTimeTo) && (
-              <div style={{ fontSize: 11, color: '#b0956e', marginTop: 1 }}>
-                {preset.defaultTime}{preset.defaultTimeTo ? ` → ${preset.defaultTimeTo}` : ''}
-              </div>
-            )}
+    <div style={{ position: 'relative' }}>
+      {indicator === 'before' && <DropBar color={preset.color} />}
+      <div
+        ref={cardRef}
+        style={{
+          background: '#fff',
+          border: `1.5px solid #e8d9c0`,
+          borderLeft: `4px solid ${preset.color}`,
+          borderRadius: 10, overflow: 'hidden',
+          boxShadow: isDragging || isSortDragging ? '0 8px 24px rgba(92,61,30,0.15)' : '0 1px 4px rgba(92,61,30,0.07)',
+          opacity: isDragging || isSortDragging ? 0.4 : 1,
+          marginBottom: 8, userSelect: 'none',
+        }}>
+        {preset.image && (
+          <div style={{ height: 56, position: 'relative', overflow: 'hidden' }}>
+            <img src={preset.image} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+            <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(to bottom, transparent 40%, rgba(0,0,0,0.4))' }} />
           </div>
+        )}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 12px' }}>
+          <div
+            onMouseDown={onSortDrag}
+            style={{ color: '#d0b88a', fontSize: 16, cursor: 'grab', flexShrink: 0, lineHeight: 1, touchAction: 'none', padding: '0 2px' }}
+            title="Drag to reorder"
+          >⠿</div>
+          <div
+            onMouseDown={onDayDrag}
+            style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0, cursor: 'grab' }}
+            title="Drag to schedule on a day"
+          >
+            <div style={{ width: 10, height: 10, borderRadius: '50%', background: preset.color, flexShrink: 0 }} />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: '#3d2408', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{preset.name}</div>
+              {(preset.defaultTime || preset.defaultTimeTo) && (
+                <div style={{ fontSize: 11, color: '#b0956e', marginTop: 1 }}>
+                  {preset.defaultTime}{preset.defaultTimeTo ? ` → ${preset.defaultTimeTo}` : ''}
+                </div>
+              )}
+            </div>
+          </div>
+          <button onClick={() => onEdit(preset)} style={iconBtn('#b0956e')}>✎</button>
+          <button onClick={() => onDelete(preset.id)} style={iconBtn('#c0392b')}>✕</button>
         </div>
-
-        <button onClick={() => onEdit(preset)} style={iconBtn('#b0956e')}>✎</button>
-        <button onClick={() => onDelete(preset.id)} style={iconBtn('#c0392b')}>✕</button>
       </div>
+      {indicator === 'after' && <DropBar color={preset.color} />}
     </div>
   );
 }
@@ -145,6 +147,16 @@ function OneTimeDraggable() {
       <span style={{ color: '#c9a96e', fontSize: 16 }}>＋</span>
       One-time event
     </div>
+  );
+}
+
+// ── Drop indicator ────────────────────────────────────────────
+function DropBar({ color = '#b8860b' }) {
+  return (
+    <div style={{
+      height: 3, background: color, borderRadius: 2,
+      margin: '0 0 4px', boxShadow: `0 0 8px ${color}88`,
+    }} />
   );
 }
 

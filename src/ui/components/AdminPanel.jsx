@@ -295,16 +295,8 @@ export default function AdminPanel() {
     const { dayIdx } = zoneData;
     setEditing(b => {
       const days = [...b.days];
-      if (dragData.id && dragData.color) {
-        pushHistory(b);
-        days[dayIdx] = { ...days[dayIdx], events: [...days[dayIdx].events, createEvent(dragData)] };
-        return updater(b, { days });
-      }
-      if (dragData.name === 'New Event') {
-        pushHistory(b);
-        days[dayIdx] = { ...days[dayIdx], events: [...days[dayIdx].events, createEvent(null, { name: 'New Event' })] };
-        return updater(b, { days });
-      }
+
+      // Cross-day event move
       if (dragData.event) {
         const { event, dayIdx: fromDay, eventIdx } = dragData;
         if (fromDay === dayIdx) return b;
@@ -313,9 +305,24 @@ export default function AdminPanel() {
         days[dayIdx]  = { ...days[dayIdx],  events: [...days[dayIdx].events, event] };
         return updater(b, { days });
       }
+
+      // One-time event
+      if (dragData.name === 'New Event') {
+        pushHistory(b);
+        days[dayIdx] = { ...days[dayIdx], events: [...days[dayIdx].events, createEvent(null, { name: 'New Event' })] };
+        return updater(b, { days });
+      }
+
+      // Preset (has id + color)
+      if (dragData.id && dragData.color) {
+        pushHistory(b);
+        days[dayIdx] = { ...days[dayIdx], events: [...days[dayIdx].events, createEvent(dragData)] };
+        return updater(b, { days });
+      }
+
       return b;
     });
-  }, [editingType, pushHistory]);
+  }, [pushHistory, updater]);
 
   const handleSort = useCallback((dragData, overData) => {
     const f = dragData.index, t = overData.index;

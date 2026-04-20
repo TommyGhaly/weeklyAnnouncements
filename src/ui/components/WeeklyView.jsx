@@ -27,12 +27,18 @@ function EventCard({ event, dayIdx, eventIdx, onUpdate, onRemove, presets }) {
   const color = event.color ?? '#b8860b';
   const cardRef = useRef(null);
   const { onMouseDown: onSortDrag } = useDrag('event-sort', { event, dayIdx, eventIdx });
-  const { registerSortZone } = useDragCtx();
+  const { dragging, overSort, registerSortZone } = useDragCtx();
+  const sortId = `event-${dayIdx}-${eventIdx}`;
+  const isBeingDragged = dragging?.type === 'event-sort'
+    && dragging?.data?.dayIdx === dayIdx
+    && dragging?.data?.eventIdx === eventIdx;
+  const indicator = overSort?.id === sortId && dragging?.type === 'event-sort' && !isBeingDragged
+    ? overSort.position : null;
 
   useEffect(() => {
-    registerSortZone(`event-${dayIdx}-${eventIdx}`, cardRef.current, { event, dayIdx, eventIdx });
-    return () => registerSortZone(`event-${dayIdx}-${eventIdx}`, null, null);
-  }, [event, dayIdx, eventIdx, registerSortZone]);
+    registerSortZone(sortId, cardRef.current, { event, dayIdx, eventIdx });
+    return () => registerSortZone(sortId, null, null);
+  }, [event, dayIdx, eventIdx, registerSortZone, sortId]);
 
   const upd = (k, v) => {
     const updated = { ...event, [k]: v };
@@ -48,80 +54,75 @@ function EventCard({ event, dayIdx, eventIdx, onUpdate, onRemove, presets }) {
     onUpdate(updated);
   };
 
-  const addContact    = ()        => upd('contacts', [...(event.contacts ?? []), { name: '', phone: '' }]);
-  const updContact    = (i, k, v) => { const c = [...(event.contacts ?? [])]; c[i] = { ...c[i], [k]: v }; upd('contacts', c); };
-  const remContact    = i         => upd('contacts', (event.contacts ?? []).filter((_, j) => j !== i));
+  const addContact = () => upd('contacts', [...(event.contacts ?? []), { name: '', phone: '' }]);
+  const updContact = (i, k, v) => { const c = [...(event.contacts ?? [])]; c[i] = { ...c[i], [k]: v }; upd('contacts', c); };
+  const remContact = i => upd('contacts', (event.contacts ?? []).filter((_, j) => j !== i));
 
   return (
-    <div ref={cardRef} style={{
-      borderRadius: 10, overflow: 'hidden',
-      border: `1.5px solid ${expanded ? color : '#e8d9c0'}`,
-      borderLeft: `4px solid ${color}`,
-      background: '#fff',
-      boxShadow: '0 1px 4px rgba(92,61,30,0.06)',
-      marginBottom: 8,
-    }}>
-      {/* Collapsed header */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', cursor: 'pointer' }}
-        onClick={() => setExpanded(e => !e)}>
-        <div onMouseDown={onSortDrag} style={{ cursor: 'grab', color: '#d0b88a', fontSize: 12, padding: '0 2px', userSelect: 'none' }}>⠿</div>
-        <div style={{ width: 10, height: 10, borderRadius: '50%', background: color, flexShrink: 0 }} />
-        <span style={{ flex: 1, fontSize: 13, fontWeight: 600, color: '#3d2408' }}>{event.name || 'Unnamed event'}</span>
-        {event.modified && <span style={{ fontSize: 9, color: '#b8860b', background: '#fdf6ec', padding: '1px 5px', borderRadius: 3, border: '1px solid #e8d9c0' }}>edited</span>}
-        {event.time && <span style={{ fontSize: 11, color: '#b0956e' }}>{event.time}{event.timeTo ? ` → ${event.timeTo}` : ''}</span>}
-        <button onClick={e => { e.stopPropagation(); onRemove(); }}
-          style={{ background: 'none', border: 'none', color: '#d0b88a', fontSize: 14, cursor: 'pointer', padding: '0 2px', lineHeight: 1 }}>✕</button>
-        <span style={{ fontSize: 10, color: '#d0b88a' }}>{expanded ? '▲' : '▼'}</span>
-      </div>
-
-      {expanded && (
-        <div style={{ padding: '0 12px 12px', borderTop: '1px solid #f0e4cc' }}>
-          {/* Name */}
-          <div style={{ marginTop: 10 }}>
-            <Label>Name</Label>
-            <input value={event.name} onChange={e => upd('name', e.target.value)} style={fieldStyle} />
-          </div>
-
-          {/* Times */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 10 }}>
-            <div>
-              <Label>Start time</Label>
-              <TimePicker value={event.time ?? ''} onChange={v => upd('time', v)} />
-            </div>
-            <div>
-              <Label>End time</Label>
-              <TimePicker value={event.timeTo ?? ''} onChange={v => upd('timeTo', v)} />
-            </div>
-          </div>
-
-          {/* Notes */}
-          <div style={{ marginTop: 10 }}>
-            <Label>Notes</Label>
-            <input value={event.notes ?? ''} onChange={e => upd('notes', e.target.value)} style={fieldStyle} placeholder="Optional subtitle..." />
-          </div>
-
-          {/* Image */}
-          <div style={{ marginTop: 10 }}>
-            <Label>Image</Label>
-            <ImagePicker value={event.image ?? ''} onChange={v => upd('image', v)} />
-          </div>
-
-          {/* Contacts */}
-          <div style={{ marginTop: 10 }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-              <Label>Contacts</Label>
-              <button onClick={addContact} style={ghostBtn}>+ Add</button>
-            </div>
-            {(event.contacts ?? []).map((ct, i) => (
-              <div key={i} style={{ display: 'flex', gap: 6, marginBottom: 6, alignItems: 'center' }}>
-                <input value={ct.name} onChange={e => updContact(i, 'name', e.target.value)} placeholder="Name" style={{ ...fieldStyle, flex: 1.5 }} />
-                <input value={ct.phone ?? ''} onChange={e => updContact(i, 'phone', e.target.value)} placeholder="Phone" style={{ ...fieldStyle, flex: 1 }} />
-                <button onClick={() => remContact(i)} style={{ background: 'none', border: 'none', color: '#c0392b', fontSize: 13, cursor: 'pointer' }}>✕</button>
-              </div>
-            ))}
-          </div>
+    <div style={{ position: 'relative' }}>
+      {indicator === 'before' && <DropBar color={color} />}
+      <div ref={cardRef} style={{
+        borderRadius: 10, overflow: 'hidden',
+        border: `1.5px solid ${expanded ? color : '#e8d9c0'}`,
+        borderLeft: `4px solid ${color}`,
+        background: '#fff',
+        boxShadow: '0 1px 4px rgba(92,61,30,0.06)',
+        marginBottom: 8,
+        opacity: isBeingDragged ? 0.4 : 1,
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', cursor: 'pointer' }}
+          onClick={() => setExpanded(e => !e)}>
+          <div onMouseDown={onSortDrag} style={{ cursor: 'grab', color: '#d0b88a', fontSize: 12, padding: '0 2px', userSelect: 'none' }}>⠿</div>
+          <div style={{ width: 10, height: 10, borderRadius: '50%', background: color, flexShrink: 0 }} />
+          <span style={{ flex: 1, fontSize: 13, fontWeight: 600, color: '#3d2408' }}>{event.name || 'Unnamed event'}</span>
+          {event.modified && <span style={{ fontSize: 9, color: '#b8860b', background: '#fdf6ec', padding: '1px 5px', borderRadius: 3, border: '1px solid #e8d9c0' }}>edited</span>}
+          {event.time && <span style={{ fontSize: 11, color: '#b0956e' }}>{event.time}{event.timeTo ? ` → ${event.timeTo}` : ''}</span>}
+          <button onClick={e => { e.stopPropagation(); onRemove(); }}
+            style={{ background: 'none', border: 'none', color: '#d0b88a', fontSize: 14, cursor: 'pointer', padding: '0 2px', lineHeight: 1 }}>✕</button>
+          <span style={{ fontSize: 10, color: '#d0b88a' }}>{expanded ? '▲' : '▼'}</span>
         </div>
-      )}
+
+        {expanded && (
+          <div style={{ padding: '0 12px 12px', borderTop: '1px solid #f0e4cc' }}>
+            <div style={{ marginTop: 10 }}>
+              <Label>Name</Label>
+              <input value={event.name} onChange={e => upd('name', e.target.value)} style={fieldStyle} />
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 10 }}>
+              <div>
+                <Label>Start time</Label>
+                <TimePicker value={event.time ?? ''} onChange={v => upd('time', v)} />
+              </div>
+              <div>
+                <Label>End time</Label>
+                <TimePicker value={event.timeTo ?? ''} onChange={v => upd('timeTo', v)} />
+              </div>
+            </div>
+            <div style={{ marginTop: 10 }}>
+              <Label>Notes</Label>
+              <input value={event.notes ?? ''} onChange={e => upd('notes', e.target.value)} style={fieldStyle} placeholder="Optional subtitle..." />
+            </div>
+            <div style={{ marginTop: 10 }}>
+              <Label>Image</Label>
+              <ImagePicker value={event.image ?? ''} onChange={v => upd('image', v)} />
+            </div>
+            <div style={{ marginTop: 10 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                <Label>Contacts</Label>
+                <button onClick={addContact} style={ghostBtn}>+ Add</button>
+              </div>
+              {(event.contacts ?? []).map((ct, i) => (
+                <div key={i} style={{ display: 'flex', gap: 6, marginBottom: 6, alignItems: 'center' }}>
+                  <input value={ct.name} onChange={e => updContact(i, 'name', e.target.value)} placeholder="Name" style={{ ...fieldStyle, flex: 1.5 }} />
+                  <input value={ct.phone ?? ''} onChange={e => updContact(i, 'phone', e.target.value)} placeholder="Phone" style={{ ...fieldStyle, flex: 1 }} />
+                  <button onClick={() => remContact(i)} style={{ background: 'none', border: 'none', color: '#c0392b', fontSize: 13, cursor: 'pointer' }}>✕</button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+      {indicator === 'after' && <DropBar color={color} />}
     </div>
   );
 }
@@ -159,8 +160,7 @@ function RemoveDayModal({ day, onConfirm, onCancel }) {
 
 // ── Day drop zone ─────────────────────────────────────────────
 function DayDropZone({ dayData, dayIdx, onUpdateDay, onRemoveDay, presets }) {
-  const dropRef = useRef(null);
-  useDropZone(dropRef, { dayIdx });
+  const { ref: dropRef, isOver } = useDropZone(`day-${dayIdx}`, { dayIdx });
 
   const updateEvent = (i, updated) => {
     const events = [...dayData.events]; events[i] = updated; onUpdateDay({ ...dayData, events });
@@ -182,7 +182,6 @@ function DayDropZone({ dayData, dayIdx, onUpdateDay, onRemoveDay, presets }) {
         </div>
         <DatePicker value={dayData.date ?? ''} onChange={v => onUpdateDay({ ...dayData, date: v })} />
         <div style={{ flex: 1, height: 1, background: '#e8d9c0' }} />
-        {/* Only endpoint days show the remove button — passed as null for middle days */}
         {onRemoveDay && (
           <button onClick={onRemoveDay} style={{ background: 'none', border: 'none', color: '#d0b88a', fontSize: 12, cursor: 'pointer', padding: '2px 4px', borderRadius: 4, lineHeight: 1 }} title={`Remove ${dayData.day}`}>
             ✕ Remove day
@@ -191,10 +190,15 @@ function DayDropZone({ dayData, dayIdx, onUpdateDay, onRemoveDay, presets }) {
       </div>
 
       {/* Drop zone */}
-      <div ref={dropRef} style={{ padding: dayData.events.length > 0 ? '8px 8px 2px' : '0', minHeight: 0 }}>
+      <div ref={dropRef} style={{
+        padding: dayData.events.length > 0 ? '8px 8px 2px' : '0',
+        minHeight: 0,
+        background: isOver ? '#fff8ee' : 'transparent',
+        transition: 'background 0.15s',
+      }}>
         {dayData.events.length === 0 && (
-          <div style={{ padding: '14px 0', textAlign: 'center', color: '#d0b88a', fontSize: 12 }}>
-            Drag events here or add manually
+          <div style={{ padding: '14px 0', textAlign: 'center', color: isOver ? '#b8860b' : '#d0b88a', fontSize: 12, fontWeight: isOver ? 600 : 400 }}>
+            {isOver ? 'Drop here' : 'Drag events here or add manually'}
           </div>
         )}
         {dayData.events.map((event, i) => (
@@ -237,6 +241,15 @@ function InsertBtn({ label, onClick }) {
       <span style={{ fontSize: 11, color: '#b8860b', fontWeight: 600, whiteSpace: 'nowrap', padding: '2px 8px', background: '#fff8ee', borderRadius: 10, border: '1px solid #e0cba8' }}>{label}</span>
       <div style={{ flex: 1, height: 1, background: '#e0cba8' }} />
     </div>
+  );
+}
+
+function DropBar({ color = '#b8860b' }) {
+  return (
+    <div style={{
+      height: 3, background: color, borderRadius: 2,
+      margin: '0 0 4px', boxShadow: `0 0 8px ${color}88`,
+    }} />
   );
 }
 
