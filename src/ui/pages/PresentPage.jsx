@@ -164,36 +164,57 @@ function DaySlide({ data, h, t }) {
   );
 }
 
-function AnnSlide({ data, h, t }) {
-  const n = data.length;
-  const TITLE_H = 86;
-  const { gap, cardH, nameSize: fontSize, pad, barW, br, nameLines } = cardMetrics(h - TITLE_H, n);
+const ANN_FONT_SIZE = 22;       // readable at distance, fits paragraphs
+const ANN_LINE_HEIGHT = 1.4;
+const ANN_CARD_VPAD = 18;       // vertical padding inside each card
+const ANN_GAP = 10;             // gap between cards
+const ANN_TITLE_H = 86;
+const ANN_BODY_PAD_V = 36;      // 20 top + 16 bottom from the slide padding
 
+function AnnSlide({ data, t, page, totalPages }) {
   return (
     <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', padding: '20px 144px 16px', boxSizing: 'border-box', overflow: 'hidden' }}>
-      <div style={{ height: TITLE_H, flexShrink: 0, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', paddingBottom: 8 }}>
-        <div style={{ fontSize: 'clamp(28px,4.5vw,56px)', fontFamily: "'Georgia',serif", fontWeight: 700, color: t.text, lineHeight: 1 }}>Announcements</div>
+      <div style={{ height: ANN_TITLE_H, flexShrink: 0, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', paddingBottom: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 14 }}>
+          <span style={{ fontSize: 'clamp(28px,4.5vw,56px)', fontFamily: "'Georgia',serif", fontWeight: 700, color: t.text, lineHeight: 1 }}>
+            Announcements
+          </span>
+          {totalPages > 1 && (
+            <span style={{ fontSize: 'clamp(11px,1.2vw,16px)', color: t.textFaint, letterSpacing: 3, fontWeight: 300 }}>
+              {page} / {totalPages}
+            </span>
+          )}
+        </div>
         <TitleBar color={t.blue} />
       </div>
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap, overflow: 'hidden' }}>
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: ANN_GAP, overflow: 'hidden' }}>
         {data.map((a, i) => (
-          <div key={i} style={{ display: 'flex', alignItems: 'center', gap: Math.max(8, cardH * 0.12), height: cardH, maxHeight: cardH, flexShrink: 0, borderLeft: `${barW}px solid ${t.blue}`, paddingLeft: Math.max(10, cardH * 0.1), background: t.cardBg, borderRadius: `0 ${br}px ${br}px 0`, overflow: 'hidden' }}>
+          <div key={i} style={{
+            display: 'flex',
+            alignItems: 'flex-start',
+            gap: 16,
+            flexShrink: 0,
+            borderLeft: `4px solid ${t.blue}`,
+            paddingLeft: 18,
+            paddingTop: ANN_CARD_VPAD,
+            paddingBottom: ANN_CARD_VPAD,
+            paddingRight: 18,
+            background: t.cardBg,
+            borderRadius: '0 8px 8px 0',
+          }}>
             {a.image && (
-              <div style={{ flexShrink: 0, height: '80%', display: 'flex', alignItems: 'center' }}>
-                <img src={a.image} alt="" style={{ maxHeight: '100%', maxWidth: cardH * 1.2, objectFit: 'contain', borderRadius: 4 }} />
+              <div style={{ flexShrink: 0, alignSelf: 'center' }}>
+                <img src={a.image} alt="" style={{ maxHeight: 80, maxWidth: 100, objectFit: 'contain', borderRadius: 4 }} />
               </div>
             )}
             <span style={{
-              fontSize,
+              fontSize: ANN_FONT_SIZE,
               color: t.text,
-              lineHeight: 1.3,
+              lineHeight: ANN_LINE_HEIGHT,
               fontFamily: "'Georgia',serif",
               fontWeight: 400,
-              overflow: 'hidden',
-              display: '-webkit-box',
-              WebkitLineClamp: nameLines,
-              WebkitBoxOrient: 'vertical',
               wordBreak: 'break-word',
+              whiteSpace: 'pre-wrap',
             }}>
               {a.text}
             </span>
@@ -202,6 +223,15 @@ function AnnSlide({ data, h, t }) {
       </div>
     </div>
   );
+}
+
+function RenderSlide({ slide, h, t }) {
+  if (!slide) return null;
+  if (slide.type === 'day')   return <DaySlide   data={slide.data} h={h} t={t} />;
+  if (slide.type === 'ann')   return <AnnSlide   data={slide.data} h={h} t={t} page={slide.page ?? 1} totalPages={slide.totalPages ?? 1} />;
+  if (slide.type === 'multi') return <MultiSlide data={slide.data} h={h} t={t} />;
+  if (slide.type === 'img')   return <ImgSlide   data={slide.data} t={t} />;
+  return null;
 }
 
 function MultiSlide({ data, h, t }) {
@@ -283,13 +313,89 @@ function ImgSlide({ data, t }) {
   );
 }
 
-function RenderSlide({ slide, h, t }) {
-  if (!slide) return null;
-  if (slide.type === 'day')   return <DaySlide   data={slide.data} h={h} t={t} />;
-  if (slide.type === 'ann')   return <AnnSlide   data={slide.data} h={h} t={t} />;
-  if (slide.type === 'multi') return <MultiSlide data={slide.data} h={h} t={t} />;
-  if (slide.type === 'img')   return <ImgSlide   data={slide.data} t={t} />;
-  return null;
+function useAnnouncementPages(announcements, bodyH) {
+  const [pages, setPages] = useState(null);
+  const measureRef = useRef(null);
+
+  useEffect(() => {
+    if (!announcements?.length || !bodyH) {
+      setPages(null);
+      return;
+    }
+    // Wait one frame for the hidden measurer to lay out
+    const id = requestAnimationFrame(() => {
+      const nodes = measureRef.current?.children;
+      if (!nodes || nodes.length !== announcements.length) return;
+
+      const heights = Array.from(nodes).map(n => n.getBoundingClientRect().height);
+      const avail = bodyH - ANN_TITLE_H - ANN_BODY_PAD_V;
+
+      const result = [];
+      let current = [];
+      let used = 0;
+      for (let i = 0; i < announcements.length; i++) {
+        const h = heights[i];
+        const withGap = current.length === 0 ? h : h + ANN_GAP;
+        if (used + withGap > avail && current.length > 0) {
+          result.push(current);
+          current = [announcements[i]];
+          used = h;
+        } else {
+          current.push(announcements[i]);
+          used += withGap;
+        }
+      }
+      if (current.length) result.push(current);
+      setPages(result);
+    });
+    return () => cancelAnimationFrame(id);
+  }, [announcements, bodyH]);
+
+  // The hidden measurer renders cards at the same width and styling as the real slide
+  const measurer = (
+    <div
+      ref={measureRef}
+      aria-hidden
+      style={{
+        position: 'fixed',
+        top: -99999,
+        left: 0,
+        width: 'calc(100vw - 288px)', // matches 144px L/R padding
+        visibility: 'hidden',
+        pointerEvents: 'none',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: ANN_GAP,
+      }}
+    >
+      {(announcements ?? []).map((a, i) => (
+        <div key={i} style={{
+          display: 'flex',
+          alignItems: 'flex-start',
+          gap: 16,
+          borderLeft: '4px solid transparent',
+          paddingLeft: 18,
+          paddingTop: ANN_CARD_VPAD,
+          paddingBottom: ANN_CARD_VPAD,
+          paddingRight: 18,
+        }}>
+          {a.image && <div style={{ flexShrink: 0, width: 100, height: 80 }} />}
+          <span style={{
+            fontSize: ANN_FONT_SIZE,
+            lineHeight: ANN_LINE_HEIGHT,
+            fontFamily: "'Georgia',serif",
+            fontWeight: 400,
+            wordBreak: 'break-word',
+            whiteSpace: 'pre-wrap',
+          }}>
+            {a.text}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+
+  return { pages, measurer };
 }
 
 export default function PresentPage() {
@@ -335,9 +441,45 @@ export default function PresentPage() {
     return () => document.removeEventListener('fullscreenchange', h);
   }, []);
 
-  const fs     = () => { if (!document.fullscreenElement) cRef.current?.requestFullscreen(); else document.exitFullscreen(); };
-  const slides  = useMemo(() => bulletin ? buildSlides(bulletin) : [], [bulletin]);
-  const total   = slides.length;
+const fs = () => { if (!document.fullscreenElement) cRef.current?.requestFullscreen(); else document.exitFullscreen(); };
+
+const rawSlides = useMemo(() => bulletin ? buildSlides(bulletin) : [], [bulletin]);
+const annSlide = useMemo(() => rawSlides.find(s => s.type === 'ann'), [rawSlides]);
+const { pages: annPages, measurer } = useAnnouncementPages(annSlide?.data, bodyH);
+
+const slides = useMemo(() => {
+  if (!rawSlides.length) return [];
+  // While measuring, hide the announcement slide so we don't flash truncated content
+  if (annSlide && annPages == null) {
+    return rawSlides.filter(s => s.type !== 'ann');
+  }
+  if (!annSlide || !annPages) return rawSlides;
+
+  const out = [];
+  for (const s of rawSlides) {
+    if (s.type === 'ann') {
+      annPages.forEach((page, i) => {
+        out.push({
+          type: 'ann',
+          key: annPages.length > 1 ? `ann-${i}` : 'ann',
+          data: page,
+          page: i + 1,
+          totalPages: annPages.length,
+        });
+      });
+    } else {
+      out.push(s);
+    }
+  }
+  return out;
+}, [rawSlides, annSlide, annPages]);
+
+const total = slides.length;
+
+
+  useEffect(() => {
+  if (total > 0 && index >= total) setIndex(0);
+  }, [total, index]);
 
   useEffect(() => {
     if (!total) return;
@@ -382,8 +524,9 @@ export default function PresentPage() {
       {config.devMode && <div style={{ position: 'fixed', inset: 0, border: '4px solid #22c55e', pointerEvents: 'none', zIndex: 99999 }} />}
       <CrossBackground t={t} />
       <style>{CSS}</style>
+        {measurer}
 
-      {config.devMode && (
+        {config.devMode && (
         <div style={{ position: 'absolute', top: 10, left: 10, zIndex: 100, background: '#22c55e', color: '#fff', fontSize: 9, fontWeight: 700, padding: '2px 8px', borderRadius: 4, letterSpacing: 1, textTransform: 'uppercase' }}>DEV</div>
       )}
 

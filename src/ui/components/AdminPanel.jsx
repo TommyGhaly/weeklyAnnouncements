@@ -425,58 +425,46 @@ export default function AdminPanel() {
     setEndSessionTarget(null);
   };
 
-  const publish = () => {
-    if (!editing || editingType !== 'session') return;
-    showConfirm({
-      title: 'Publish to Telegram?',
-      message: `Send the full bulletin to the ${config.devMode ? 'TEST' : 'live'} Telegram channel.`,
-      confirmLabel: 'Publish', confirmColor: '#5c3d1e',
-      onConfirm: async () => {
-        closeConfirm(); setPublishing(true);
-        try {
-          setMsg('Generating PDF...', 'info');
-          const blob    = await exporter.export(editing, logoUrl);
-          setMsg('Sending to Telegram...', 'info');
-          const adapter = await TelegramAdapter.create();
-          const messageIds = await adapter.publish(editing, blob);
-          const updated = updateSession(editing, { lastPublished: new Date().toISOString(), telegramMessageIds: messageIds, telegramLastSent: new Date().toISOString() });
-          setEditing(updated); await repo.saveSession(updated); setSessions(await repo.listSessions());
-          setDirty(false); setMsg('Published!', 'success');
-        } catch (e) { setMsg(`Error: ${e.message}`, 'error'); }
-        setPublishing(false);
-      },
-    });
-  };
+const publish     = () => setPublishPrompt({ mode: 'publish',   oldIdsCount: 0 });
+const republish   = () => setPublishPrompt({ mode: 'republish', oldIdsCount: (editing?.telegramMessageIds ?? []).length });
 
-  const republish = () => {
-    if (!editing || editingType !== 'session') return;
-    const oldIds = editing.telegramMessageIds ?? [];
-    showConfirm({
-      title: 'Re-publish bulletin?',
-      message: oldIds.length > 0 ? `Delete ${oldIds.length} previously sent message${oldIds.length > 1 ? 's' : ''} and send an updated bulletin.` : 'Send an updated bulletin to Telegram.',
-      confirmLabel: 'Re-publish', confirmColor: '#b8860b',
-      onConfirm: async () => {
-        closeConfirm(); setPublishing(true);
-        try {
-          if (oldIds.length) {
-            setMsg('Removing old messages...', 'info');
-            const adapter = await TelegramAdapter.create();
-            await adapter.deleteMessages(oldIds);
-          }
-          setMsg('Generating PDF...', 'info');
-          const blob    = await exporter.export(editing, logoUrl);
-          setMsg('Sending updated bulletin...', 'info');
-          const adapter = await TelegramAdapter.create();
-          const messageIds = await adapter.publish(editing, blob);
-          const updated = updateSession(editing, { lastPublished: new Date().toISOString(), telegramMessageIds: messageIds, telegramLastSent: new Date().toISOString() });
-          setEditing(updated); await repo.saveSession(updated); setSessions(await repo.listSessions());
-          setDirty(false); setMsg('Re-published!', 'success');
-        } catch (e) { setMsg(`Error: ${e.message}`, 'error'); }
-        setPublishing(false);
-      },
+const runPublish = async (mode, includeAnnouncements) => {
+  if (!editing || editingType !== 'session') return;
+  setPublishPrompt(null);
+  setPublishing(true);
+  try {
+    if (mode === 'republish') {
+      const oldIds = editing.telegramMessageIds ?? [];
+      if (oldIds.length) {
+        setMsg('Removing old messages...', 'info');
+        const adapter = await TelegramAdapter.create();
+        await adapter.deleteMessages(oldIds);
+      }
+    }
+    setMsg('Generating PDF...', 'info');
+    const blob = await exporter.export(editing, logoUrl);
+    setMsg(mode === 'republish' ? 'Sending updated bulletin...' : 'Sending to Telegram...', 'info');
+    const adapter = await TelegramAdapter.create();
+    const messageIds = await adapter.publish(editing, blob, { includeAnnouncements });
+    const updated = updateSession(editing, {
+      lastPublished: new Date().toISOString(),
+      telegramMessageIds: messageIds,
+      telegramLastSent: new Date().toISOString(),
+      lastPublishIncludedAnnouncements: includeAnnouncements,
     });
-  };
-
+    setEditing(updated); await repo.saveSession(updated); setSessions(await repo.listSessions());
+    setDirty(false);
+    setMsg(
+      mode === 'republish'
+        ? (includeAnnouncements ? 'Re-published with announcements!' : 'Re-published (no announcements)')
+        : (includeAnnouncements ? 'Published with announcements!' : 'Published (no announcements)'),
+      'success'
+    );
+  } catch (e) { setMsg(`Error: ${e.message}`, 'error'); }
+  setPublishing(false);
+};
+  const [publishPrompt, setPublishPrompt] = useState(null);
+  // shape: { mode: 'publish' | 'republish', oldIdsCount: number }
   const undoSend = () => {
     if (!editing || editingType !== 'session') return;
     const ids = editing.telegramMessageIds ?? [];
@@ -653,7 +641,45 @@ export default function AdminPanel() {
         {config.devMode && <div style={{ position: 'fixed', inset: 0, border: '4px solid #22c55e', pointerEvents: 'none', zIndex: 99999 }} />}
         <ConfirmModal {...confirm} onCancel={closeConfirm} />
         <SaveTemplateModal open={saveTemplateOpen} defaultName={editorName} sourceTemplateId={editing.templateId} templates={templates} onSave={handleSaveAsTemplate} onClose={() => setSaveTemplateOpen(false)} />
-
+            {publishPrompt && (
+              <div onClick={() => setPublishPrompt(null)} style={{ position: 'fixed', inset: 0, zIndex: 99999, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <div onClick={e => e.stopPropagation()} style={{ background: '#fff', borderRadius: 20, width: '90%', maxWidth: 460, boxShadow: '0 20px 60px rgba(0,0,0,0.3)', border: '1.5px solid #e8d9c0', overflow: 'hidden' }}>
+                  <div style={{ background: 'linear-gradient(135deg, #2e1a08, #5c3d1e)', padding: '20px 28px' }}>
+                    <div style={{ color: '#d4a017', fontSize: 14, fontFamily: 'Playfair Display, serif', fontWeight: 600 }}>
+                      {publishPrompt.mode === 'republish' ? 'Re-publish bulletin?' : 'Publish to Telegram?'}
+                    </div>
+                    <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: 11, marginTop: 2 }}>
+                      {publishPrompt.mode === 'republish'
+                        ? (publishPrompt.oldIdsCount > 0
+                            ? `Will delete ${publishPrompt.oldIdsCount} previously sent message${publishPrompt.oldIdsCount > 1 ? 's' : ''}`
+                            : 'Send an updated bulletin')
+                        : `${config.devMode ? 'TEST channel' : 'Live channel'}`}
+                    </div>
+                  </div>
+                  <div style={{ padding: '20px 28px' }}>
+                    <div style={{ fontSize: 13, color: '#5c3d1e', marginBottom: 14, lineHeight: 1.6 }}>
+                      Include announcements in this post?
+                    </div>
+                    {(editing.announcements ?? []).length === 0 && (
+                      <div style={{ fontSize: 11, color: '#b0956e', background: '#fdf6ec', padding: '8px 12px', borderRadius: 6, marginBottom: 12 }}>
+                        This bulletin has no announcements — both options will produce the same result.
+                      </div>
+                    )}
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, flexWrap: 'wrap' }}>
+                      <button onClick={() => setPublishPrompt(null)} style={{ padding: '8px 18px', background: '#f4ece0', border: '1px solid #e0cba8', borderRadius: 8, fontSize: 13, color: '#5c3d1e', cursor: 'pointer' }}>
+                        Cancel
+                      </button>
+                      <button onClick={() => runPublish(publishPrompt.mode, false)} style={{ padding: '8px 18px', background: '#fff', border: '1.5px solid #5c3d1e', color: '#5c3d1e', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+                        Without announcements
+                      </button>
+                      <button onClick={() => runPublish(publishPrompt.mode, true)} style={{ padding: '8px 18px', background: 'linear-gradient(135deg, #b8860b, #d4a017)', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+                        With announcements
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
         {/* Bar 1 — dark, never scrolls */}
         <div style={{ background: 'linear-gradient(135deg, #2e1a08 0%, #5c3d1e 100%)', boxShadow: '0 2px 24px rgba(46,26,8,0.3)', flexShrink: 0, zIndex: 51 }}>
           <div style={{ maxWidth: 1400, margin: '0 auto', padding: '14px 32px', display: 'flex', alignItems: 'center', gap: 14 }}>

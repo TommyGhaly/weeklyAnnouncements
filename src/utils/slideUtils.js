@@ -48,13 +48,14 @@ export function slideDurationMs(slide, bulletin, baselineSec = 10, multiplier = 
     return Math.min(120, slide.data[0]._slideDuration) * 1000;
   }
   if (slide.type === 'multi') {
-    // use the duration of the first event that has one set
     const first = slide.data.find(e => e.duration != null);
     if (first) return Math.min(120, first.duration) * 1000;
   }
   // 2. Slide-level override from SlideTimingsPanel
   const overrides = bulletin?.slideDurations ?? {};
   if (overrides[slide.key] != null) return overrides[slide.key] * 1000;
+  // For announcements: any page-specific key wins, otherwise fall back to a shared 'ann' key
+  if (slide.type === 'ann' && overrides['ann'] != null) return overrides['ann'] * 1000;
   // 3. Auto scaling
   return autoMs(slide.type, itemCount(slide), baselineSec, multiplier);
 }

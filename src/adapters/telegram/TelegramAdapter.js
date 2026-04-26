@@ -28,9 +28,13 @@ export class TelegramAdapter extends NotificationPort {
 
   // ─── PUBLISH ───────────────────────────────────────────────
 
-  async publish(bulletin, pdfBlob) {
+  async publish(bulletin, pdfBlob, { includeAnnouncements = true } = {}) {
     const ids = [];
-    const digest = this.formatDigest(bulletin);
+    // Build a digest that respects the flag
+    const filteredBulletin = includeAnnouncements
+      ? bulletin
+      : { ...bulletin, announcements: [] };
+    const digest = this.formatDigest(filteredBulletin);
     const header = `✝ *${CHURCH_NAME}* — ${bulletin.presetName}\n🗓 Week of ${bulletin.weekLabel}`;
     const filename = `${bulletin.presetName ?? 'Weekly Bulletin'}.pdf`;
 
