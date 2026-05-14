@@ -96,7 +96,7 @@ export const BulletinDocument = ({ bulletin, logoUrl, imageMap }) => {
                 <View style={[s.evDot, { backgroundColor: e.color ?? gold }]} />
                 <Text style={s.mdName}>{e.name}</Text>
                 <View style={s.mdRight}>
-                  {sf ? <Text style={s.mdDate}>{sf}{ef ? ` → ${ef}` : ''}</Text> : null}
+                  {sf ? <Text style={s.mdDate}>{sf}{ef ? ` - ${ef}` : ''}</Text> : null}
                   {e.time ? <Text style={s.mdTime}>{e.time}{e.timeTo ? ` – ${e.timeTo}` : ''}</Text> : null}
                 </View>
                 <Img src={img(e.image)} style={s.mdImg} />
