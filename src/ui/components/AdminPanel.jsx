@@ -170,6 +170,7 @@ export default function AdminPanel() {
   const [statusType, setStatusType] = useState('info');
   const [publishing, setPublishing] = useState(false);
   const [saving,     setSaving]     = useState(false);
+  const [pdfBusy,    setPdfBusy]    = useState(false);
 
   const [wizardOpen,       setWizardOpen]       = useState(false);
   const [saveTemplateOpen, setSaveTemplateOpen] = useState(false);
@@ -423,6 +424,62 @@ export default function AdminPanel() {
       setMsg(`Session ended: ${session.presetName}`, 'info');
     }
     setEndSessionTarget(null);
+  };
+
+  // ── PDF print / share ─────────────────────────────────────
+  const buildPdfBlob = async () => exporter.export(editing, logoUrl);
+
+  const printPdf = async () => {
+    if (!editing) return;
+    setPdfBusy(true);
+    setMsg('Generating PDF...', 'info');
+    try {
+      const blob = await buildPdfBlob();
+      const url = URL.createObjectURL(blob);
+      const iframe = document.createElement('iframe');
+      Object.assign(iframe.style, { position: 'fixed', right: '0', bottom: '0', width: '0', height: '0', border: '0' });
+      iframe.src = url;
+      iframe.onload = () => {
+        setTimeout(() => {
+          try { iframe.contentWindow.focus(); iframe.contentWindow.print(); }
+          catch (err) { setMsg(`Print error: ${err.message}`, 'error'); }
+        }, 250);
+        // Keep the blob/iframe alive long enough for the print dialog to read it
+        setTimeout(() => { URL.revokeObjectURL(url); iframe.remove(); }, 60000);
+      };
+      document.body.appendChild(iframe);
+    } catch (e) {
+      setMsg(`Print error: ${e.message}`, 'error');
+    }
+    setPdfBusy(false);
+  };
+
+  const sharePdf = async () => {
+    if (!editing) return;
+    setPdfBusy(true);
+    setMsg('Generating PDF...', 'info');
+    try {
+      const blob = await buildPdfBlob();
+      const filename = `${editing.presetName ?? 'Weekly Bulletin'}.pdf`;
+      const file = new File([blob], filename, { type: 'application/pdf' });
+
+      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+        await navigator.share({ files: [file], title: filename });
+        setMsg('Shared', 'success');
+      } else {
+        // Fallback: download
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(url), 10000);
+        setMsg('Downloaded', 'success');
+      }
+    } catch (e) {
+      if (e.name !== 'AbortError') setMsg(`Share error: ${e.message}`, 'error');
+    }
+    setPdfBusy(false);
   };
 
 const publish     = () => setPublishPrompt({ mode: 'publish',   oldIdsCount: 0 });
@@ -766,6 +823,18 @@ const runPublish = async (mode, includeAnnouncements) => {
             <button onClick={save} disabled={saving} style={teleBtn(saving, '#b8860b', '#d4a017')}>
               {saving ? 'Saving...' : dirty ? 'Save *' : 'Save'}
             </button>
+            {isSession && (
+              <>
+                <button onClick={printPdf} disabled={pdfBusy}
+                  style={{ padding: '7px 14px', background: '#fff', border: '1px solid #e0cba8', borderRadius: 8, fontSize: 12, color: '#5c3d1e', cursor: pdfBusy ? 'default' : 'pointer', whiteSpace: 'nowrap' }}>
+                  {pdfBusy ? '...' : '🖨 Print'}
+                </button>
+                <button onClick={sharePdf} disabled={pdfBusy}
+                  style={{ padding: '7px 14px', background: '#fff', border: '1px solid #e0cba8', borderRadius: 8, fontSize: 12, color: '#5c3d1e', cursor: pdfBusy ? 'default' : 'pointer', whiteSpace: 'nowrap' }}>
+                  Share
+                </button>
+              </>
+            )}
             {isSession && <button onClick={() => setSaveTemplateOpen(true)} style={{ padding: '7px 14px', background: '#f4ece0', border: '1px solid #e0cba8', borderRadius: 8, fontSize: 12, color: '#5c3d1e', cursor: 'pointer', whiteSpace: 'nowrap' }}>Save as Template</button>}
             {isSession && (
               <button onClick={() => setAsPresentation()} style={{ padding: '7px 14px', background: activeBulletinId === editing.id ? '#27ae60' : '#2c3e50', color: '#fff', border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5, whiteSpace: 'nowrap' }}>

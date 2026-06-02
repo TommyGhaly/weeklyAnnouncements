@@ -35,18 +35,14 @@ export class TelegramAdapter extends NotificationPort {
       ? bulletin
       : { ...bulletin, announcements: [] };
     const digest = this.formatDigest(filteredBulletin);
-    const header = `✝ *${CHURCH_NAME}* — ${bulletin.presetName}\n🗓 Week of ${bulletin.weekLabel}`;
     const filename = `${bulletin.presetName ?? 'Weekly Bulletin'}.pdf`;
 
-    if (digest.length <= 1024) {
-      const id = await this._sendDocument(pdfBlob, filename, digest);
-      if (id) ids.push(id);
-    } else {
-      const id = await this._sendDocument(pdfBlob, filename, header);
-      if (id) ids.push(id);
-      const mids = await this._sendLongMessage(digest);
-      ids.push(...mids);
-    }
+    // PDF goes out with no caption; the digest follows as its own message
+    const docId = await this._sendDocument(pdfBlob, filename, '');
+    if (docId) ids.push(docId);
+    const mids = await this._sendLongMessage(digest);
+    ids.push(...mids);
+
     return ids;
   }
 
@@ -75,8 +71,7 @@ export class TelegramAdapter extends NotificationPort {
       const lines = [
         `✝ *${CHURCH_NAME}*`,
         ``,
-        `📢 *Announcements*`,
-        ``,
+        `*Announcements*`,
         ...withoutImage.map(a => `• ${a.text}`),
       ];
       const textIds = await this._sendLongMessage(lines.join('\n'));
@@ -135,8 +130,10 @@ export class TelegramAdapter extends NotificationPort {
     const form = new FormData();
     form.append('chat_id',    this.chatId);
     form.append('document',   pdfBlob, filename);
-    form.append('caption',    caption.slice(0, 1024));
-    form.append('parse_mode', 'Markdown');
+    if (caption) {
+      form.append('caption',    caption.slice(0, 1024));
+      form.append('parse_mode', 'Markdown');
+    }
     const res = await fetch(`${this.base}/sendDocument`, { method: 'POST', body: form });
     if (!res.ok) {
       const e = await res.json().catch(() => ({}));
@@ -234,24 +231,17 @@ export class TelegramAdapter extends NotificationPort {
   formatDigest(bulletin) {
     const lines = [
       `✝ *${CHURCH_NAME}*`,
-      ``,
-      `📋 *${bulletin.presetName ?? 'Weekly Bulletin'}*`,
-      `🗓 Week of ${bulletin.weekLabel ?? ''}`,
+      `*${bulletin.presetName ?? 'Weekly Bulletin'}* · Week of ${bulletin.weekLabel ?? ''}`,
     ];
 
     const headerNotes = (bulletin.headerNotes ?? []).filter(n => n.text?.trim());
-    if (headerNotes.length) {
-      lines.push(``);
-      for (const n of headerNotes) {
-        lines.push(`   📌 _${n.text}_`);
-      }
-    }
+    for (const n of headerNotes) lines.push(`_${n.text}_`);
 
-    lines.push(``, DIV, ``);
+    lines.push(DIV);
 
     const multiDay = (bulletin.multiDayEvents ?? []).filter(e => e.name);
     if (multiDay.length) {
-      lines.push(`🗓 *Upcoming Events*`, ``);
+      lines.push('*Upcoming*');
       for (const e of multiDay) {
         const start = e.startDate
           ? new Date(e.startDate + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
@@ -260,23 +250,22 @@ export class TelegramAdapter extends NotificationPort {
           ? new Date(e.endDate + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
           : '';
         const time = e.time ? ` · ${e.time}${e.timeTo ? `–${e.timeTo}` : ''}` : '';
-        lines.push(`   *${e.name}*`);
-        lines.push(`   📅 ${end ? `${start} — ${end}` : start}${time}`);
-        if (e.notes) lines.push(`   _${e.notes}_`);
+        const when = end ? `${start} — ${end}` : start;
+        lines.push(`*${e.name}* — ${when}${time}`);
+        if (e.notes) lines.push(`  _${e.notes}_`);
         const contacts = e.contacts ?? [];
         if (contacts.length) {
-          lines.push(`   👤 ${contacts.map(c => c.name + (c.phone ? ` ${c.phone}` : '')).join(' · ')}`);
+          lines.push(`  ${contacts.map(c => c.name + (c.phone ? ` ${c.phone}` : '')).join(' · ')}`);
         }
-        lines.push(``);
       }
-      lines.push(DIV, ``);
+      lines.push(DIV);
     }
 
     const anns = (bulletin.announcements ?? []).filter(a => a.text?.trim());
     if (anns.length) {
-      lines.push(`📢 *Announcements*`, ``);
-      for (const a of anns) lines.push(`   • ${a.text}`);
-      lines.push(``, DIV, ``);
+      lines.push('*Announcements*');
+      for (const a of anns) lines.push(`• ${a.text}`);
+      lines.push(DIV);
     }
 
     for (const day of bulletin.days ?? []) {
@@ -284,18 +273,16 @@ export class TelegramAdapter extends NotificationPort {
       const dateLabel = day.date
         ? new Date(day.date + 'T00:00:00').toLocaleDateString('en-US', { month: 'long', day: 'numeric' })
         : '';
-      lines.push(`📅 *${day.day}${dateLabel ? ` — ${dateLabel}` : ''}*`, ``);
+      lines.push(`*${day.day}${dateLabel ? ` · ${dateLabel}` : ''}*`);
       for (const ev of day.events) {
-        const time = ev.time ? `🕐 ${ev.time}${ev.timeTo ? ` → ${ev.timeTo}` : ''}` : '';
-        lines.push(`   *${ev.name}*`);
-        if (time) lines.push(`   ${time}`);
-        if (ev.notes) lines.push(`   _${ev.notes}_`);
+        const time = ev.time ? `${ev.time}${ev.timeTo ? `–${ev.timeTo}` : ''}` : '';
+        lines.push(`  ${time ? `${time} · ` : ''}*${ev.name}*`);
+        if (ev.notes) lines.push(`    _${ev.notes}_`);
         for (const c of ev.contacts ?? []) {
-          if (c.name || c.phone) lines.push(`   📞 ${c.name}${c.phone ? ` · ${c.phone}` : ''}`);
+          if (c.name || c.phone) lines.push(`    ${c.name}${c.phone ? ` · ${c.phone}` : ''}`);
         }
-        lines.push(``);
       }
-      lines.push(DIV, ``);
+      lines.push(DIV);
     }
 
     return lines.join('\n');
