@@ -8,10 +8,13 @@ const DIV = '━━━━━━━━━━━━━━━';
 export class TelegramAdapter extends NotificationPort {
   constructor(devMode = false) {
     super();
-    this.token  = import.meta.env.VITE_TELEGRAM_BOT_TOKEN;
-    this.chatId = devMode
+    this.token      = import.meta.env.VITE_TELEGRAM_BOT_TOKEN;
+    this.chatId     = devMode
       ? import.meta.env.VITE_TELEGRAM_CHAT_ID_TEST
       : import.meta.env.VITE_TELEGRAM_CHAT_ID_REAL;
+    this.homlyChatId = devMode
+      ? import.meta.env.VITE_TELEGRAM_CHAT_ID_TEST
+      : import.meta.env.VITE_TELEGRAM_HOMILY_CHAT_ID;
     this.base = `https://api.telegram.org/bot${this.token}`;
   }
 
@@ -20,7 +23,7 @@ export class TelegramAdapter extends NotificationPort {
       const snap = await getDoc(doc(db, 'config', 'app'));
       const devMode = snap.exists() ? (snap.data().devMode ?? false) : false;
       return new TelegramAdapter(devMode);
-    } catch (e) {
+    } catch {
       const devMode = import.meta.env.VITE_TELEGRAM_USE_REAL !== 'true';
       return new TelegramAdapter(devMode);
     }
@@ -30,14 +33,12 @@ export class TelegramAdapter extends NotificationPort {
 
   async publish(bulletin, pdfBlob, { includeAnnouncements = true } = {}) {
     const ids = [];
-    // Build a digest that respects the flag
     const filteredBulletin = includeAnnouncements
       ? bulletin
       : { ...bulletin, announcements: [] };
-    const digest = this.formatDigest(filteredBulletin);
+    const digest   = this.formatDigest(filteredBulletin);
     const filename = `${bulletin.presetName ?? 'Weekly Bulletin'}.pdf`;
 
-    // PDF goes out with no caption; the digest follows as its own message
     const docId = await this._sendDocument(pdfBlob, filename, '');
     if (docId) ids.push(docId);
     const mids = await this._sendLongMessage(digest);
@@ -76,6 +77,26 @@ export class TelegramAdapter extends NotificationPort {
       ];
       const textIds = await this._sendLongMessage(lines.join('\n'));
       ids.push(...textIds);
+    }
+
+    return ids;
+  }
+
+  async publishHomily(bulletin, pdfBlob, filteredBulletin) {
+    const digest   = this.formatDigest(filteredBulletin);
+    const filename = `${bulletin.presetName ?? 'Homily'}.pdf`;
+
+    const mainChatId = this.chatId;
+    this.chatId      = this.homlyChatId;
+
+    const ids = [];
+    try {
+      const docId = await this._sendDocument(pdfBlob, filename, '');
+      if (docId) ids.push(docId);
+      const msgIds = await this._sendLongMessage(digest);
+      ids.push(...msgIds);
+    } finally {
+      this.chatId = mainChatId;
     }
 
     return ids;
@@ -128,8 +149,8 @@ export class TelegramAdapter extends NotificationPort {
 
   async _sendDocument(pdfBlob, filename, caption) {
     const form = new FormData();
-    form.append('chat_id',    this.chatId);
-    form.append('document',   pdfBlob, filename);
+    form.append('chat_id',  this.chatId);
+    form.append('document', pdfBlob, filename);
     if (caption) {
       form.append('caption',    caption.slice(0, 1024));
       form.append('parse_mode', 'Markdown');

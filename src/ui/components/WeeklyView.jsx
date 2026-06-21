@@ -1,7 +1,6 @@
-import { useState, useRef, useEffect } from 'react';
+import { useRef, useEffect, useState } from 'react';
 import { TimePicker, DatePicker } from './DrumPicker';
 import ImagePicker from './ImagePicker';
-import { useDropZone } from '../drag/useDropZone.js';
 import { useDrag } from '../drag/useDrag.js';
 import { useDragCtx } from '../drag/DragContext.jsx';
 
@@ -20,6 +19,16 @@ function computeInsertDate(refDay, position) {
 
 const createDay = (day, date = '') => ({ day, date, events: [] });
 
+// ── Drop bar ──────────────────────────────────────────────────
+function DropBar({ color = '#b8860b' }) {
+  return (
+    <div style={{
+      height: 3, background: color, borderRadius: 2,
+      margin: '0 0 4px', boxShadow: `0 0 8px ${color}88`,
+    }} />
+  );
+}
+
 // ── Event card ─────────────────────────────────────────────────
 function EventCard({ event, dayIdx, eventIdx, onUpdate, onRemove, presets }) {
   const [expanded, setExpanded] = useState(false);
@@ -27,12 +36,17 @@ function EventCard({ event, dayIdx, eventIdx, onUpdate, onRemove, presets }) {
   const color = event.color ?? '#b8860b';
   const cardRef = useRef(null);
   const { onMouseDown: onSortDrag } = useDrag('event-sort', { event, dayIdx, eventIdx });
-  const { dragging, overSort, registerSortZone } = useDragCtx();
+  const { dragging, overSort, overZone, registerSortZone } = useDragCtx();
   const sortId = `event-${dayIdx}-${eventIdx}`;
+
   const isBeingDragged = dragging?.type === 'event-sort'
     && dragging?.data?.dayIdx === dayIdx
     && dragging?.data?.eventIdx === eventIdx;
-  const indicator = overSort?.id === sortId && dragging?.type === 'event-sort' && !isBeingDragged
+
+  // Show sort indicator when reordering within same day
+  const indicator = overSort?.id === sortId
+    && dragging?.type === 'event-sort'
+    && !isBeingDragged
     ? overSort.position : null;
 
   useEffect(() => {
@@ -69,6 +83,7 @@ function EventCard({ event, dayIdx, eventIdx, onUpdate, onRemove, presets }) {
         boxShadow: '0 1px 4px rgba(92,61,30,0.06)',
         marginBottom: 8,
         opacity: isBeingDragged ? 0.4 : 1,
+        transition: 'opacity 0.15s',
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', cursor: 'pointer' }}
           onClick={() => setExpanded(e => !e)}>
@@ -138,7 +153,7 @@ function RemoveDayModal({ day, onConfirm, onCancel }) {
         </div>
         {hasEvents ? (
           <div style={{ fontSize: 13, color: '#c0392b', background: '#fdf0ed', padding: '10px 14px', borderRadius: 8, border: '1px solid #f5c6cb', marginBottom: 16, lineHeight: 1.5 }}>
-            ⚠️ This day has {day.events.length} event{day.events.length > 1 ? 's' : ''} — they will be permanently deleted.
+            This day has {day.events.length} event{day.events.length > 1 ? 's' : ''} — they will be permanently deleted.
           </div>
         ) : (
           <div style={{ fontSize: 13, color: '#7a5230', marginBottom: 16, lineHeight: 1.5 }}>
@@ -160,7 +175,20 @@ function RemoveDayModal({ day, onConfirm, onCancel }) {
 
 // ── Day drop zone ─────────────────────────────────────────────
 function DayDropZone({ dayData, dayIdx, onUpdateDay, onRemoveDay, presets }) {
-  const { ref: dropRef, isOver } = useDropZone(`day-${dayIdx}`, { dayIdx });
+  const zoneId = `day-${dayIdx}`;
+  const { registerZone, dragging, overZone } = useDragCtx();
+  const outerRef = useRef(null);
+
+  // Register the OUTER card div so the full card area (including header and events) is hittable
+  useEffect(() => {
+    registerZone(zoneId, outerRef.current, { dayIdx });
+    return () => registerZone(zoneId, null, null);
+  }, [zoneId, dayIdx, registerZone]);
+
+  const isDragTarget     = overZone === zoneId && !!dragging;
+  const isCrossDayTarget = isDragTarget && dragging?.type === 'event-sort' && dragging?.data?.dayIdx !== dayIdx;
+  const isPresetTarget   = isDragTarget && dragging?.type !== 'event-sort' && dragging?.type !== 'sort';
+  const showHighlight    = isCrossDayTarget || isPresetTarget;
 
   const updateEvent = (i, updated) => {
     const events = [...dayData.events]; events[i] = updated; onUpdateDay({ ...dayData, events });
@@ -169,11 +197,23 @@ function DayDropZone({ dayData, dayIdx, onUpdateDay, onRemoveDay, presets }) {
   const addEvent    = () => onUpdateDay({ ...dayData, events: [...dayData.events, { id: crypto.randomUUID(), name: 'New Event', time: '', timeTo: '', notes: '', contacts: [], color: '#b8860b', modified: true }] });
 
   return (
-    <div style={{ marginBottom: 8, borderRadius: 12, border: '1.5px solid #e8d9c0', background: '#fdf6ec', overflow: 'hidden' }}>
+    <div ref={outerRef} style={{
+      marginBottom: 8, borderRadius: 12,
+      border: showHighlight ? '1.5px solid #b8860b' : '1.5px solid #e8d9c0',
+      background: showHighlight ? '#fffbf2' : '#fdf6ec',
+      overflow: 'hidden',
+      transition: 'border-color 0.15s, background 0.15s',
+      boxShadow: showHighlight ? '0 0 0 3px #b8860b22' : 'none',
+    }}>
       {/* Day header */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', background: '#fff8ee', borderBottom: '1px solid #f0e4cc' }}>
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px',
+        background: showHighlight ? '#fff8e8' : '#fff8ee',
+        borderBottom: '1px solid #f0e4cc',
+        transition: 'background 0.15s',
+      }}>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
-          <span style={{ fontSize: 14, fontWeight: 700, color: '#5c3d1e' }}>{dayData.day}</span>
+          <span style={{ fontSize: 14, fontWeight: 700, color: showHighlight ? '#b8860b' : '#5c3d1e', transition: 'color 0.15s' }}>{dayData.day}</span>
           {dayData.date && (
             <span style={{ fontSize: 11, color: '#b0956e', fontWeight: 500 }}>
               {new Date(dayData.date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
@@ -189,16 +229,27 @@ function DayDropZone({ dayData, dayIdx, onUpdateDay, onRemoveDay, presets }) {
         )}
       </div>
 
-      {/* Drop zone */}
-      <div ref={dropRef} style={{
-        padding: dayData.events.length > 0 ? '8px 8px 2px' : '0',
-        minHeight: 0,
-        background: isOver ? '#fff8ee' : 'transparent',
-        transition: 'background 0.15s',
-      }}>
+      {/* Drop target indicator strip */}
+      {showHighlight && dayData.events.length > 0 && (
+        <div style={{
+          background: 'linear-gradient(to bottom, #b8860b22, transparent)',
+          padding: '6px 8px 2px',
+          fontSize: 11, color: '#b8860b', fontWeight: 600, textAlign: 'center',
+        }}>
+          Drop to add to {dayData.day}
+        </div>
+      )}
+
+      {/* Events */}
+      <div style={{ padding: dayData.events.length > 0 ? '8px 8px 2px' : '0' }}>
         {dayData.events.length === 0 && (
-          <div style={{ padding: '14px 0', textAlign: 'center', color: isOver ? '#b8860b' : '#d0b88a', fontSize: 12, fontWeight: isOver ? 600 : 400 }}>
-            {isOver ? 'Drop here' : 'Drag events here or add manually'}
+          <div style={{
+            padding: '14px 0', textAlign: 'center',
+            color: showHighlight ? '#b8860b' : '#d0b88a',
+            fontSize: 12, fontWeight: showHighlight ? 600 : 400,
+            transition: 'color 0.15s',
+          }}>
+            {showHighlight ? 'Drop here' : 'Drag events here or add manually'}
           </div>
         )}
         {dayData.events.map((event, i) => (
@@ -244,18 +295,8 @@ function InsertBtn({ label, onClick }) {
   );
 }
 
-function DropBar({ color = '#b8860b' }) {
-  return (
-    <div style={{
-      height: 3, background: color, borderRadius: 2,
-      margin: '0 0 4px', boxShadow: `0 0 8px ${color}88`,
-    }} />
-  );
-}
-
 // ── Main export ───────────────────────────────────────────────
 export default function WeeklyView({ bulletin, onUpdateBulletin, presets }) {
-  // Track which day index is pending removal (for the confirm modal)
   const [pendingRemove, setPendingRemove] = useState(null);
 
   const insertDay = (atIdx, position) => {
@@ -267,10 +308,9 @@ export default function WeeklyView({ bulletin, onUpdateBulletin, presets }) {
     onUpdateBulletin({ ...bulletin, days });
   };
 
-  // Only allow removing first or last day — show confirm modal
   const requestRemoveDay = i => {
     const isEndpoint = i === 0 || i === bulletin.days.length - 1;
-    if (!isEndpoint) return; // shouldn't be callable anyway
+    if (!isEndpoint) return;
     setPendingRemove(i);
   };
 
@@ -286,7 +326,6 @@ export default function WeeklyView({ bulletin, onUpdateBulletin, presets }) {
 
   return (
     <div>
-      {/* Confirm modal */}
       {pendingRemove !== null && (
         <RemoveDayModal
           day={bulletin.days[pendingRemove]}
@@ -295,7 +334,6 @@ export default function WeeklyView({ bulletin, onUpdateBulletin, presets }) {
         />
       )}
 
-      {/* Add before first */}
       {bulletin.days.length > 0 && (
         <InsertBtn
           label={`+ ${prevDayName(bulletin.days[0].day)}`}
@@ -309,7 +347,6 @@ export default function WeeklyView({ bulletin, onUpdateBulletin, presets }) {
           dayData={day}
           dayIdx={i}
           onUpdateDay={updated => updateDay(i, updated)}
-          // Only pass remove handler for first and last day
           onRemoveDay={
             (i === 0 || i === bulletin.days.length - 1)
               ? () => requestRemoveDay(i)
@@ -319,7 +356,6 @@ export default function WeeklyView({ bulletin, onUpdateBulletin, presets }) {
         />
       ))}
 
-      {/* Add after last */}
       {bulletin.days.length > 0 && (
         <InsertBtn
           label={`+ ${nextDayName(bulletin.days[bulletin.days.length - 1].day)}`}

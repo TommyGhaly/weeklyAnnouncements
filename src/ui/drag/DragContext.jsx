@@ -5,11 +5,11 @@ export const useDragCtx = () => useContext(Ctx);
 
 export default function DragProvider({ children, onDrop, onSort, onEventReorder }) {
   const [dragging, setDragging] = useState(null);
-  const [overZone, setOverZone] = useState(null);
-  const [overSort, setOverSort] = useState(null); // { id, position: 'before'|'after' }
-  const zonesRef = useRef(new Map());
+  const [overZone, setOverZone] = useState(null);   // day zone id being hovered
+  const [overSort, setOverSort] = useState(null);   // { id, position: 'before'|'after' }
+  const zonesRef     = useRef(new Map());
   const sortZonesRef = useRef(new Map());
-  const frameRef = useRef(null);
+  const frameRef     = useRef(null);
 
   const registerZone = useCallback((id, el, data) => {
     if (el) zonesRef.current.set(id, { el, data });
@@ -42,15 +42,18 @@ export default function DragProvider({ children, onDrop, onSort, onEventReorder 
       frameRef.current = requestAnimationFrame(() => {
         setDragging(d => d ? { ...d, x, y } : null);
 
-        // Day zone highlight
+        // Day zone highlight — always track regardless of drag type
         let foundZone = null;
         for (const [id, { el }] of zonesRef.current) {
           const r = el.getBoundingClientRect();
-          if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) { foundZone = id; break; }
+          if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) {
+            foundZone = id;
+            break;
+          }
         }
         setOverZone(foundZone);
 
-        // Sort indicator — only for reorder drags
+        // Sort indicator — for both within-day reorder AND cross-day event drags
         const t = dragging.type;
         if (t === 'event-sort' || t === 'sort') {
           let foundSort = null;
@@ -99,6 +102,7 @@ export default function DragProvider({ children, onDrop, onSort, onEventReorder 
     };
   }, [dragging, onDrop, onSort, onEventReorder]);
 
+  // Expose overZone id so day cards can highlight themselves
   return (
     <Ctx.Provider value={{ dragging, overZone, overSort, startDrag, registerZone, registerSortZone }}>
       {children}

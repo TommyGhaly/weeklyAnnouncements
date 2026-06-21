@@ -1,7 +1,9 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { pdf } from '@react-pdf/renderer';
 import { FirebaseBulletinRepo } from '../../adapters/firebase/FirebaseBulletinRepo';
 import { ReactPDFExporter } from '../../adapters/export/ReactPDFExporter.jsx';
 import { TelegramAdapter } from '../../adapters/telegram/TelegramAdapter';
+import { HomilyDocument } from './HomilyDocument';
 import {
   createSession, updateSession, createEvent, createHeaderNote, createAnnouncement,
   createAnnouncementPreset, createTemplate, updateTemplate, sessionToTemplate, templateToSession,
@@ -21,6 +23,7 @@ import ConfirmModal from './ConfirmModal';
 import NewSessionWizard from './NewSessionWizard';
 import SaveTemplateModal from './SaveTemplateModal';
 import ConfigPanel from './ConfigPanel';
+import HomilyExportModal from './HomilyExportModal';
 import { useAppConfig } from '../../hooks/useAppConfig';
 
 const repo     = new FirebaseBulletinRepo();
@@ -79,7 +82,7 @@ function SummaryCard({ item, isActive, isTemplate, onEdit, onPresent, onDelete, 
         <button onClick={onEdit} style={btn('#b8860b', '#d4a017')}>Edit</button>
         {!isTemplate && onPresent && (
           <button onClick={onPresent} style={{ padding: '6px 16px', background: isActive ? '#27ae60' : '#2c3e50', color: '#fff', border: 'none', borderRadius: 7, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>
-            {isActive ? '✓ Presenting' : '📺 Present'}
+            {isActive ? 'Presenting' : 'Present'}
           </button>
         )}
         {!isTemplate && onEndSession && (
@@ -104,7 +107,6 @@ function TelegramBar({ session, publishing, devMode, onPublish, onRepublish, onU
     <div style={{ background: '#fff', borderRadius: 12, border: `1.5px solid ${devMode ? '#22c55e44' : '#e8d9c0'}`, padding: '14px 20px', boxShadow: '0 1px 6px rgba(92,61,30,0.05)' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ fontSize: 14 }}>📨</span>
           <span style={{ fontSize: 12, fontWeight: 700, color: '#5c3d1e', textTransform: 'uppercase', letterSpacing: 1 }}>Telegram</span>
           {devMode && <span style={{ fontSize: 9, fontWeight: 700, color: '#22c55e', background: '#f0fdf4', padding: '2px 7px', borderRadius: 4, border: '1px solid #22c55e44', textTransform: 'uppercase', letterSpacing: 0.5 }}>TEST</span>}
         </div>
@@ -119,26 +121,71 @@ function TelegramBar({ session, publishing, devMode, onPublish, onRepublish, onU
           <span style={{ fontSize: 11, color: '#b0956e' }}>Not yet published</span>
         )}
       </div>
-      {lastAnn && <div style={{ fontSize: 10, color: '#2980b9', marginBottom: 8 }}>📢 Announcements sent {timeAgo(lastAnn)}</div>}
+      {lastAnn && <div style={{ fontSize: 10, color: '#2980b9', marginBottom: 8 }}>Announcements sent {timeAgo(lastAnn)}</div>}
       <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
         {!hasSent ? (
           <button onClick={onPublish} disabled={publishing} style={teleBtn(publishing, '#3d2408', '#5c3d1e')}>
-            {publishing ? 'Publishing...' : '📤 Publish Full Bulletin'}
+            {publishing ? 'Publishing...' : 'Publish Full Bulletin'}
           </button>
         ) : (
           <>
             <button onClick={onRepublish} disabled={publishing} style={teleBtn(publishing, '#b8860b', '#d4a017')}>
-              {publishing ? '...' : '🔄 Re-publish'}
+              {publishing ? '...' : 'Re-publish'}
             </button>
-            <button onClick={onUndo} disabled={publishing} style={teleBtnOutline(publishing, '#c0392b')}>🗑 Undo</button>
+            <button onClick={onUndo} disabled={publishing} style={teleBtnOutline(publishing, '#c0392b')}>Undo</button>
           </>
         )}
         <button onClick={onPublishAnnouncements} disabled={publishing} style={teleBtn(publishing, '#1a5276', '#2980b9')}>
-          📢 Announcements Only
+          Announcements Only
         </button>
-        {hasAnn && <button onClick={onUndoAnnouncements} disabled={publishing} style={teleBtnOutline(publishing, '#2980b9')}>🗑 Undo Ann.</button>}
+        {hasAnn && <button onClick={onUndoAnnouncements} disabled={publishing} style={teleBtnOutline(publishing, '#2980b9')}>Undo Ann.</button>}
       </div>
       {hasSent && <div style={{ fontSize: 10, color: '#b0956e', marginTop: 8, fontStyle: 'italic' }}>Undo available for 48 hours after sending.</div>}
+    </div>
+  );
+}
+
+// ── Homily bar ────────────────────────────────────────────────
+function HomilyBar({ onPrint, onSend, publishing, pdfBusy }) {
+  const busy = publishing || pdfBusy;
+  return (
+    <div style={{ background: '#fff', borderRadius: 12, border: '1.5px solid #ddd5c8', boxShadow: '0 1px 6px rgba(92,61,30,0.05)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 20px' }}>
+        <div>
+          <div style={{ fontSize: 12, fontWeight: 700, color: '#5c3d1e', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 4 }}>Homily Export</div>
+          <div style={{ fontSize: 11, color: '#b0956e', lineHeight: 1.4 }}>
+            Send a text-only version to the homily channel or print a large-print PDF.
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: 8, marginLeft: 16, flexShrink: 0 }}>
+          <button
+            onClick={onPrint}
+            disabled={busy}
+            style={{
+              padding: '8px 16px', background: '#fff', border: '1.5px solid #5c3d1e',
+              borderRadius: 8, fontSize: 12, fontWeight: 600, color: '#3d2408',
+              cursor: busy ? 'default' : 'pointer', opacity: busy ? 0.5 : 1,
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {pdfBusy ? '...' : 'Print PDF'}
+          </button>
+          <button
+            onClick={onSend}
+            disabled={busy}
+            style={{
+              padding: '8px 16px',
+              background: busy ? '#ccc' : 'linear-gradient(135deg, #2c3e50, #3d5a73)',
+              border: 'none', borderRadius: 8,
+              fontSize: 12, fontWeight: 600, color: '#fff',
+              cursor: busy ? 'default' : 'pointer',
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {publishing ? 'Sending...' : 'Send to Homily Channel'}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -158,19 +205,21 @@ export default function AdminPanel() {
   const [editingType, setEditingType] = useState(null);
   const [dirty,       setDirty]       = useState(false);
 
-  // ── Undo / redo stacks ────────────────────────────────────
   const [history, setHistory] = useState([]);
   const [future,  setFuture]  = useState([]);
   const editingRef = useRef(null);
-  useEffect(() => {
-    editingRef.current = editing;
-  }, [editing]);
+  useEffect(() => { editingRef.current = editing; }, [editing]);
 
   const [status,     setStatus]     = useState('');
   const [statusType, setStatusType] = useState('info');
   const [publishing, setPublishing] = useState(false);
   const [saving,     setSaving]     = useState(false);
   const [pdfBusy,    setPdfBusy]    = useState(false);
+
+  const [homilyOpen,       setHomilyOpen]       = useState(false);
+  const [homilyMode,       setHomilyMode]       = useState(null);
+  const [homilyPublishing, setHomilyPublishing] = useState(false);
+  const [homilyPdfBusy,    setHomilyPdfBusy]    = useState(false);
 
   const [wizardOpen,       setWizardOpen]       = useState(false);
   const [saveTemplateOpen, setSaveTemplateOpen] = useState(false);
@@ -203,14 +252,13 @@ export default function AdminPanel() {
     if (announcementPresets.length > 0) localStorage.setItem('wa_ann_presets', JSON.stringify(announcementPresets));
   }, [announcementPresets]);
 
-  // Clear stacks when opening a different item
   useEffect(() => { setHistory([]); setFuture([]); }, [editing?.id]);
 
   const updater = useCallback(
     (current, changes) => (editingType === 'template' ? updateTemplate : updateSession)(current, changes),
     [editingType]
   );
-  // ── updateEditing — pushes to undo stack ──────────────────
+
   const updateEditing = useCallback(changes => {
     setEditing(current => {
       if (!current) return current;
@@ -221,7 +269,6 @@ export default function AdminPanel() {
     });
   }, [updater]);
 
-  // ── updateEditingDirect — for full object updates (also pushes to undo stack) ──────────────────
   const updateEditingDirect = useCallback(newEditing => {
     setHistory(h => [...h.slice(-(HISTORY_LIMIT - 1)), editingRef.current]);
     setFuture([]);
@@ -229,7 +276,6 @@ export default function AdminPanel() {
     setEditing(newEditing);
   }, []);
 
-  // ── Undo ──────────────────────────────────────────────────
   const undo = useCallback(() => {
     setHistory(h => {
       if (!h.length) return h;
@@ -241,7 +287,6 @@ export default function AdminPanel() {
     });
   }, []);
 
-  // ── Redo ──────────────────────────────────────────────────
   const redo = useCallback(() => {
     setFuture(f => {
       if (!f.length) return f;
@@ -253,11 +298,9 @@ export default function AdminPanel() {
     });
   }, []);
 
-  // ── Keyboard shortcuts ────────────────────────────────────
   useEffect(() => {
     const handler = e => {
       if (!editing) return;
-      // Don't intercept when typing in an input/textarea
       if (['INPUT', 'TEXTAREA'].includes(e.target.tagName)) return;
       const ctrl = e.ctrlKey || e.metaKey;
       if (ctrl && !e.shiftKey && e.key === 'z') { e.preventDefault(); undo(); }
@@ -285,7 +328,6 @@ export default function AdminPanel() {
 
   const handleLogoChange = async url => { setLogoUrl(url); await repo.setLogo(url); };
 
-  // Drag handlers also push to history
   const pushHistory = useCallback(snapshot => {
     setHistory(h => [...h.slice(-(HISTORY_LIMIT - 1)), snapshot]);
     setFuture([]);
@@ -296,8 +338,6 @@ export default function AdminPanel() {
     const { dayIdx } = zoneData;
     setEditing(b => {
       const days = [...b.days];
-
-      // Cross-day event move
       if (dragData.event) {
         const { event, dayIdx: fromDay, eventIdx } = dragData;
         if (fromDay === dayIdx) return b;
@@ -306,21 +346,16 @@ export default function AdminPanel() {
         days[dayIdx]  = { ...days[dayIdx],  events: [...days[dayIdx].events, event] };
         return updater(b, { days });
       }
-
-      // One-time event
       if (dragData.name === 'New Event') {
         pushHistory(b);
         days[dayIdx] = { ...days[dayIdx], events: [...days[dayIdx].events, createEvent(null, { name: 'New Event' })] };
         return updater(b, { days });
       }
-
-      // Preset (has id + color)
       if (dragData.id && dragData.color) {
         pushHistory(b);
         days[dayIdx] = { ...days[dayIdx], events: [...days[dayIdx].events, createEvent(dragData)] };
         return updater(b, { days });
       }
-
       return b;
     });
   }, [pushHistory, updater]);
@@ -334,15 +369,35 @@ export default function AdminPanel() {
   const handleEventReorder = useCallback((dragData, overData) => {
     const { dayIdx: fromDay, eventIdx: fromIdx } = dragData;
     const { dayIdx: toDay,   eventIdx: toIdx   } = overData;
-    if (fromDay !== toDay || fromIdx === toIdx) return;
+
+    // Cross-day: move event to the target day, inserted at toIdx position
+    if (fromDay !== toDay) {
+      setEditing(b => {
+        pushHistory(b);
+        const days = [...b.days];
+        const event = days[fromDay].events[fromIdx];
+        const fromEvents = days[fromDay].events.filter((_, i) => i !== fromIdx);
+        const toEvents   = [...days[toDay].events];
+        toEvents.splice(toIdx, 0, event);
+        days[fromDay] = { ...days[fromDay], events: fromEvents };
+        days[toDay]   = { ...days[toDay],   events: toEvents };
+        return updater(b, { days });
+      });
+      return;
+    }
+
+    // Same-day reorder
+    if (fromIdx === toIdx) return;
     setEditing(b => {
       pushHistory(b);
-      const days = [...b.days]; const events = [...days[fromDay].events];
-      const [moved] = events.splice(fromIdx, 1); events.splice(toIdx, 0, moved);
+      const days = [...b.days];
+      const events = [...days[fromDay].events];
+      const [moved] = events.splice(fromIdx, 1);
+      events.splice(toIdx, 0, moved);
       days[fromDay] = { ...days[fromDay], events };
       return updater(b, { days });
     });
-  }, [editingType, pushHistory]);
+  }, [editingType, pushHistory, updater]);
 
   const save = async () => {
     if (!editing) return;
@@ -426,7 +481,7 @@ export default function AdminPanel() {
     setEndSessionTarget(null);
   };
 
-  // ── PDF print / share ─────────────────────────────────────
+  // ── PDF ───────────────────────────────────────────────────
   const buildPdfBlob = async () => exporter.export(editing, logoUrl);
 
   const printPdf = async () => {
@@ -444,13 +499,10 @@ export default function AdminPanel() {
           try { iframe.contentWindow.focus(); iframe.contentWindow.print(); }
           catch (err) { setMsg(`Print error: ${err.message}`, 'error'); }
         }, 250);
-        // Keep the blob/iframe alive long enough for the print dialog to read it
         setTimeout(() => { URL.revokeObjectURL(url); iframe.remove(); }, 60000);
       };
       document.body.appendChild(iframe);
-    } catch (e) {
-      setMsg(`Print error: ${e.message}`, 'error');
-    }
+    } catch (e) { setMsg(`Print error: ${e.message}`, 'error'); }
     setPdfBusy(false);
   };
 
@@ -462,17 +514,13 @@ export default function AdminPanel() {
       const blob = await buildPdfBlob();
       const filename = `${editing.presetName ?? 'Weekly Bulletin'}.pdf`;
       const file = new File([blob], filename, { type: 'application/pdf' });
-
       if (navigator.canShare && navigator.canShare({ files: [file] })) {
         await navigator.share({ files: [file], title: filename });
         setMsg('Shared', 'success');
       } else {
-        // Fallback: download
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
-        a.href = url;
-        a.download = filename;
-        a.click();
+        a.href = url; a.download = filename; a.click();
         setTimeout(() => URL.revokeObjectURL(url), 10000);
         setMsg('Downloaded', 'success');
       }
@@ -482,46 +530,90 @@ export default function AdminPanel() {
     setPdfBusy(false);
   };
 
-const publish     = () => setPublishPrompt({ mode: 'publish',   oldIdsCount: 0 });
-const republish   = () => setPublishPrompt({ mode: 'republish', oldIdsCount: (editing?.telegramMessageIds ?? []).length });
+  // ── Homily export ─────────────────────────────────────────
+  const buildHomilyBlob = async filteredBulletin => {
+    const blob = await pdf(<HomilyDocument bulletin={filteredBulletin} />).toBlob();
+    return blob;
+  };
 
-const runPublish = async (mode, includeAnnouncements) => {
-  if (!editing || editingType !== 'session') return;
-  setPublishPrompt(null);
-  setPublishing(true);
-  try {
-    if (mode === 'republish') {
-      const oldIds = editing.telegramMessageIds ?? [];
-      if (oldIds.length) {
-        setMsg('Removing old messages...', 'info');
-        const adapter = await TelegramAdapter.create();
-        await adapter.deleteMessages(oldIds);
+  const handleHomilyPrint = async filteredBulletin => {
+    setHomilyOpen(false);
+    setHomilyPdfBusy(true);
+    setMsg('Generating homily PDF...', 'info');
+    try {
+      const blob = await buildHomilyBlob(filteredBulletin);
+      const url  = URL.createObjectURL(blob);
+      const iframe = document.createElement('iframe');
+      Object.assign(iframe.style, { position: 'fixed', right: '0', bottom: '0', width: '0', height: '0', border: '0' });
+      iframe.src = url;
+      iframe.onload = () => {
+        setTimeout(() => {
+          try { iframe.contentWindow.focus(); iframe.contentWindow.print(); }
+          catch (err) { setMsg(`Print error: ${err.message}`, 'error'); }
+        }, 250);
+        setTimeout(() => { URL.revokeObjectURL(url); iframe.remove(); }, 60000);
+      };
+      document.body.appendChild(iframe);
+    } catch (e) { setMsg(`Homily print error: ${e.message}`, 'error'); }
+    setHomilyPdfBusy(false);
+  };
+
+  const handleHomilyTelegram = async filteredBulletin => {
+    setHomilyOpen(false);
+    setHomilyPublishing(true);
+    setMsg('Generating homily PDF...', 'info');
+    try {
+      const blob    = await buildHomilyBlob(filteredBulletin);
+      setMsg('Sending to homily channel...', 'info');
+      const adapter = await TelegramAdapter.create();
+      await adapter.publishHomily(editing, blob, filteredBulletin);
+      setMsg('Sent to homily channel!', 'success');
+    } catch (e) { setMsg(`Homily error: ${e.message}`, 'error'); }
+    setHomilyPublishing(false);
+  };
+
+  // ── Publish ───────────────────────────────────────────────
+  const publish   = () => setPublishPrompt({ mode: 'publish',   oldIdsCount: 0 });
+  const republish = () => setPublishPrompt({ mode: 'republish', oldIdsCount: (editing?.telegramMessageIds ?? []).length });
+
+  const runPublish = async (mode, includeAnnouncements) => {
+    if (!editing || editingType !== 'session') return;
+    setPublishPrompt(null);
+    setPublishing(true);
+    try {
+      if (mode === 'republish') {
+        const oldIds = editing.telegramMessageIds ?? [];
+        if (oldIds.length) {
+          setMsg('Removing old messages...', 'info');
+          const adapter = await TelegramAdapter.create();
+          await adapter.deleteMessages(oldIds);
+        }
       }
-    }
-    setMsg('Generating PDF...', 'info');
-    const blob = await exporter.export(editing, logoUrl);
-    setMsg(mode === 'republish' ? 'Sending updated bulletin...' : 'Sending to Telegram...', 'info');
-    const adapter = await TelegramAdapter.create();
-    const messageIds = await adapter.publish(editing, blob, { includeAnnouncements });
-    const updated = updateSession(editing, {
-      lastPublished: new Date().toISOString(),
-      telegramMessageIds: messageIds,
-      telegramLastSent: new Date().toISOString(),
-      lastPublishIncludedAnnouncements: includeAnnouncements,
-    });
-    setEditing(updated); await repo.saveSession(updated); setSessions(await repo.listSessions());
-    setDirty(false);
-    setMsg(
-      mode === 'republish'
-        ? (includeAnnouncements ? 'Re-published with announcements!' : 'Re-published (no announcements)')
-        : (includeAnnouncements ? 'Published with announcements!' : 'Published (no announcements)'),
-      'success'
-    );
-  } catch (e) { setMsg(`Error: ${e.message}`, 'error'); }
-  setPublishing(false);
-};
+      setMsg('Generating PDF...', 'info');
+      const blob = await exporter.export(editing, logoUrl);
+      setMsg(mode === 'republish' ? 'Sending updated bulletin...' : 'Sending to Telegram...', 'info');
+      const adapter = await TelegramAdapter.create();
+      const messageIds = await adapter.publish(editing, blob, { includeAnnouncements });
+      const updated = updateSession(editing, {
+        lastPublished: new Date().toISOString(),
+        telegramMessageIds: messageIds,
+        telegramLastSent: new Date().toISOString(),
+        lastPublishIncludedAnnouncements: includeAnnouncements,
+      });
+      setEditing(updated); await repo.saveSession(updated); setSessions(await repo.listSessions());
+      setDirty(false);
+      setMsg(
+        mode === 'republish'
+          ? (includeAnnouncements ? 'Re-published with announcements!' : 'Re-published (no announcements)')
+          : (includeAnnouncements ? 'Published with announcements!' : 'Published (no announcements)'),
+        'success'
+      );
+    } catch (e) { setMsg(`Error: ${e.message}`, 'error'); }
+    setPublishing(false);
+  };
+
   const [publishPrompt, setPublishPrompt] = useState(null);
-  // shape: { mode: 'publish' | 'republish', oldIdsCount: number }
+
   const undoSend = () => {
     if (!editing || editingType !== 'session') return;
     const ids = editing.telegramMessageIds ?? [];
@@ -611,11 +703,11 @@ const runPublish = async (mode, includeAnnouncements) => {
                 <div style={{ fontSize: 13, color: '#5c3d1e', marginBottom: 16, lineHeight: 1.6 }}>What would you like to do with this session?</div>
                 <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
                   <button onClick={() => setEndSessionMode('restart')} style={{ flex: 1, padding: '14px', borderRadius: 10, cursor: 'pointer', textAlign: 'left', background: endSessionMode === 'restart' ? '#fdf6ec' : '#fff', border: endSessionMode === 'restart' ? '1.5px solid #b8860b' : '1.5px solid #e8d9c0' }}>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: endSessionMode === 'restart' ? '#b8860b' : '#3d2408' }}>🔄 Restart with new date</div>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: endSessionMode === 'restart' ? '#b8860b' : '#3d2408' }}>Restart with new date</div>
                     <div style={{ fontSize: 11, color: '#b0956e', marginTop: 3 }}>Create a new session using the same template with a new week date</div>
                   </button>
                   <button onClick={() => setEndSessionMode('archive')} style={{ flex: 1, padding: '14px', borderRadius: 10, cursor: 'pointer', textAlign: 'left', background: endSessionMode === 'archive' ? '#fdf6ec' : '#fff', border: endSessionMode === 'archive' ? '1.5px solid #b8860b' : '1.5px solid #e8d9c0' }}>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: endSessionMode === 'archive' ? '#b8860b' : '#3d2408' }}>✓ Just end it</div>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: endSessionMode === 'archive' ? '#b8860b' : '#3d2408' }}>Just end it</div>
                     <div style={{ fontSize: 11, color: '#b0956e', marginTop: 3 }}>Stop presenting{activeBulletinId === endSessionTarget.id ? ' (currently live)' : ''}</div>
                   </button>
                 </div>
@@ -624,12 +716,12 @@ const runPublish = async (mode, includeAnnouncements) => {
                     <div style={{ fontSize: 11, color: '#b0956e', fontWeight: 600, marginBottom: 6 }}>New week date</div>
                     <input type="date" value={endSessionDate} onChange={e => setEndSessionDate(e.target.value)} autoFocus style={{ width: '100%', fontSize: 14, padding: '10px 12px', border: '1.5px solid #e0cba8', borderRadius: 8, background: '#fdf6ec', color: '#5c3d1e', outline: 'none', boxSizing: 'border-box' }} />
                     {endSessionTarget.templateId
-                      ? <div style={{ fontSize: 10, color: '#27ae60', marginTop: 6 }}>✓ Will use the original template</div>
+                      ? <div style={{ fontSize: 10, color: '#27ae60', marginTop: 6 }}>Will use the original template</div>
                       : <div style={{ fontSize: 10, color: '#b0956e', marginTop: 6 }}>No linked template — will recreate from current session</div>}
                   </div>
                 )}
                 {endSessionMode === 'archive' && activeBulletinId === endSessionTarget.id && (
-                  <div style={{ fontSize: 11, color: '#c0392b', background: '#fdf0ed', padding: '10px 14px', borderRadius: 8, border: '1px solid #f5c6cb', marginBottom: 16 }}>⚠️ This session is currently being presented. Ending it will clear the screen.</div>
+                  <div style={{ fontSize: 11, color: '#c0392b', background: '#fdf0ed', padding: '10px 14px', borderRadius: 8, border: '1px solid #f5c6cb', marginBottom: 16 }}>This session is currently being presented. Ending it will clear the screen.</div>
                 )}
                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
                   <button onClick={() => setEndSessionTarget(null)} style={{ padding: '8px 18px', background: '#f4ece0', border: '1px solid #e0cba8', borderRadius: 8, fontSize: 13, color: '#5c3d1e', cursor: 'pointer' }}>Cancel</button>
@@ -693,51 +785,57 @@ const runPublish = async (mode, includeAnnouncements) => {
 
   return (
     <DragProvider onDrop={handleDrop} onSort={handleSort} onEventReorder={handleEventReorder}>
-      {/* Full-viewport shell — nothing scrolls except the content column */}
       <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', background: '#f4ece0', fontFamily: 'Inter, sans-serif', overflow: 'hidden' }}>
         {config.devMode && <div style={{ position: 'fixed', inset: 0, border: '4px solid #22c55e', pointerEvents: 'none', zIndex: 99999 }} />}
+
         <ConfirmModal {...confirm} onCancel={closeConfirm} />
         <SaveTemplateModal open={saveTemplateOpen} defaultName={editorName} sourceTemplateId={editing.templateId} templates={templates} onSave={handleSaveAsTemplate} onClose={() => setSaveTemplateOpen(false)} />
-            {publishPrompt && (
-              <div onClick={() => setPublishPrompt(null)} style={{ position: 'fixed', inset: 0, zIndex: 99999, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <div onClick={e => e.stopPropagation()} style={{ background: '#fff', borderRadius: 20, width: '90%', maxWidth: 460, boxShadow: '0 20px 60px rgba(0,0,0,0.3)', border: '1.5px solid #e8d9c0', overflow: 'hidden' }}>
-                  <div style={{ background: 'linear-gradient(135deg, #2e1a08, #5c3d1e)', padding: '20px 28px' }}>
-                    <div style={{ color: '#d4a017', fontSize: 14, fontFamily: 'Playfair Display, serif', fontWeight: 600 }}>
-                      {publishPrompt.mode === 'republish' ? 'Re-publish bulletin?' : 'Publish to Telegram?'}
-                    </div>
-                    <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: 11, marginTop: 2 }}>
-                      {publishPrompt.mode === 'republish'
-                        ? (publishPrompt.oldIdsCount > 0
-                            ? `Will delete ${publishPrompt.oldIdsCount} previously sent message${publishPrompt.oldIdsCount > 1 ? 's' : ''}`
-                            : 'Send an updated bulletin')
-                        : `${config.devMode ? 'TEST channel' : 'Live channel'}`}
-                    </div>
-                  </div>
-                  <div style={{ padding: '20px 28px' }}>
-                    <div style={{ fontSize: 13, color: '#5c3d1e', marginBottom: 14, lineHeight: 1.6 }}>
-                      Include announcements in this post?
-                    </div>
-                    {(editing.announcements ?? []).length === 0 && (
-                      <div style={{ fontSize: 11, color: '#b0956e', background: '#fdf6ec', padding: '8px 12px', borderRadius: 6, marginBottom: 12 }}>
-                        This bulletin has no announcements — both options will produce the same result.
-                      </div>
-                    )}
-                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, flexWrap: 'wrap' }}>
-                      <button onClick={() => setPublishPrompt(null)} style={{ padding: '8px 18px', background: '#f4ece0', border: '1px solid #e0cba8', borderRadius: 8, fontSize: 13, color: '#5c3d1e', cursor: 'pointer' }}>
-                        Cancel
-                      </button>
-                      <button onClick={() => runPublish(publishPrompt.mode, false)} style={{ padding: '8px 18px', background: '#fff', border: '1.5px solid #5c3d1e', color: '#5c3d1e', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
-                        Without announcements
-                      </button>
-                      <button onClick={() => runPublish(publishPrompt.mode, true)} style={{ padding: '8px 18px', background: 'linear-gradient(135deg, #b8860b, #d4a017)', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
-                        With announcements
-                      </button>
-                    </div>
-                  </div>
+        <HomilyExportModal
+          open={homilyOpen}
+          bulletin={editing}
+          initialMode={homilyMode}
+          onClose={() => setHomilyOpen(false)}
+          onSendTelegram={handleHomilyTelegram}
+          onPrint={handleHomilyPrint}
+          publishing={homilyPublishing}
+          pdfBusy={homilyPdfBusy}
+        />
+
+        {publishPrompt && (
+          <div onClick={() => setPublishPrompt(null)} style={{ position: 'fixed', inset: 0, zIndex: 99999, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <div onClick={e => e.stopPropagation()} style={{ background: '#fff', borderRadius: 20, width: '90%', maxWidth: 460, boxShadow: '0 20px 60px rgba(0,0,0,0.3)', border: '1.5px solid #e8d9c0', overflow: 'hidden' }}>
+              <div style={{ background: 'linear-gradient(135deg, #2e1a08, #5c3d1e)', padding: '20px 28px' }}>
+                <div style={{ color: '#d4a017', fontSize: 14, fontFamily: 'Playfair Display, serif', fontWeight: 600 }}>
+                  {publishPrompt.mode === 'republish' ? 'Re-publish bulletin?' : 'Publish to Telegram?'}
+                </div>
+                <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: 11, marginTop: 2 }}>
+                  {publishPrompt.mode === 'republish'
+                    ? (publishPrompt.oldIdsCount > 0
+                        ? `Will delete ${publishPrompt.oldIdsCount} previously sent message${publishPrompt.oldIdsCount > 1 ? 's' : ''}`
+                        : 'Send an updated bulletin')
+                    : `${config.devMode ? 'TEST channel' : 'Live channel'}`}
                 </div>
               </div>
-            )}
-        {/* Bar 1 — dark, never scrolls */}
+              <div style={{ padding: '20px 28px' }}>
+                <div style={{ fontSize: 13, color: '#5c3d1e', marginBottom: 14, lineHeight: 1.6 }}>
+                  Include announcements in this post?
+                </div>
+                {(editing.announcements ?? []).length === 0 && (
+                  <div style={{ fontSize: 11, color: '#b0956e', background: '#fdf6ec', padding: '8px 12px', borderRadius: 6, marginBottom: 12 }}>
+                    This bulletin has no announcements — both options will produce the same result.
+                  </div>
+                )}
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, flexWrap: 'wrap' }}>
+                  <button onClick={() => setPublishPrompt(null)} style={{ padding: '8px 18px', background: '#f4ece0', border: '1px solid #e0cba8', borderRadius: 8, fontSize: 13, color: '#5c3d1e', cursor: 'pointer' }}>Cancel</button>
+                  <button onClick={() => runPublish(publishPrompt.mode, false)} style={{ padding: '8px 18px', background: '#fff', border: '1.5px solid #5c3d1e', color: '#5c3d1e', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>Without announcements</button>
+                  <button onClick={() => runPublish(publishPrompt.mode, true)} style={{ padding: '8px 18px', background: 'linear-gradient(135deg, #b8860b, #d4a017)', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>With announcements</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Bar 1 — dark */}
         <div style={{ background: 'linear-gradient(135deg, #2e1a08 0%, #5c3d1e 100%)', boxShadow: '0 2px 24px rgba(46,26,8,0.3)', flexShrink: 0, zIndex: 51 }}>
           <div style={{ maxWidth: 1400, margin: '0 auto', padding: '14px 32px', display: 'flex', alignItems: 'center', gap: 14 }}>
             <button onClick={backToList} style={{ background: 'none', border: '1px solid rgba(255,255,255,0.15)', color: 'rgba(255,255,255,0.6)', fontSize: 12, cursor: 'pointer', padding: '6px 12px', borderRadius: 6, flexShrink: 0 }}>← Back</button>
@@ -759,20 +857,16 @@ const runPublish = async (mode, includeAnnouncements) => {
           </div>
         </div>
 
-        {/* Bar 2 — white, never scrolls */}
+        {/* Bar 2 — white */}
         <div style={{ background: '#fff', borderBottom: '1.5px solid #e8d9c0', boxShadow: '0 1px 6px rgba(92,61,30,0.07)', flexShrink: 0, zIndex: 50 }}>
           <div style={{ maxWidth: 1400, margin: '0 auto', padding: '8px 32px', display: 'flex', gap: 8, alignItems: 'center' }}>
-
-            {/* Undo / Redo */}
             <div style={{ display: 'flex', gap: 2, flexShrink: 0 }}>
               <button onClick={undo} disabled={!canUndo}
                 title={`Undo (${navigator.platform.includes('Mac') ? '⌘' : 'Ctrl'}+Z) · ${history.length} step${history.length !== 1 ? 's' : ''}`}
-                style={{ padding: '5px 9px', fontSize: 13, fontWeight: 700, lineHeight: 1, background: canUndo ? '#fdf6ec' : 'transparent', border: '1.5px solid #e0cba8', borderRadius: '6px 0 0 6px', color: canUndo ? '#5c3d1e' : '#d0b88a', cursor: canUndo ? 'pointer' : 'default', transition: 'all 0.15s' }}
-              >←</button>
+                style={{ padding: '5px 9px', fontSize: 13, fontWeight: 700, lineHeight: 1, background: canUndo ? '#fdf6ec' : 'transparent', border: '1.5px solid #e0cba8', borderRadius: '6px 0 0 6px', color: canUndo ? '#5c3d1e' : '#d0b88a', cursor: canUndo ? 'pointer' : 'default', transition: 'all 0.15s' }}>←</button>
               <button onClick={redo} disabled={!canRedo}
                 title={`Redo (${navigator.platform.includes('Mac') ? '⌘' : 'Ctrl'}+Shift+Z) · ${future.length} step${future.length !== 1 ? 's' : ''}`}
-                style={{ padding: '5px 9px', fontSize: 13, fontWeight: 700, lineHeight: 1, background: canRedo ? '#fdf6ec' : 'transparent', border: '1.5px solid #e0cba8', borderLeft: 'none', borderRadius: '0 6px 6px 0', color: canRedo ? '#5c3d1e' : '#d0b88a', cursor: canRedo ? 'pointer' : 'default', transition: 'all 0.15s' }}
-              >→</button>
+                style={{ padding: '5px 9px', fontSize: 13, fontWeight: 700, lineHeight: 1, background: canRedo ? '#fdf6ec' : 'transparent', border: '1.5px solid #e0cba8', borderLeft: 'none', borderRadius: '0 6px 6px 0', color: canRedo ? '#5c3d1e' : '#d0b88a', cursor: canRedo ? 'pointer' : 'default', transition: 'all 0.15s' }}>→</button>
             </div>
 
             <div style={{ width: 1, height: 16, background: '#e0cba8', flexShrink: 0 }} />
@@ -825,12 +919,10 @@ const runPublish = async (mode, includeAnnouncements) => {
             </button>
             {isSession && (
               <>
-                <button onClick={printPdf} disabled={pdfBusy}
-                  style={{ padding: '7px 14px', background: '#fff', border: '1px solid #e0cba8', borderRadius: 8, fontSize: 12, color: '#5c3d1e', cursor: pdfBusy ? 'default' : 'pointer', whiteSpace: 'nowrap' }}>
-                  {pdfBusy ? '...' : '🖨 Print'}
+                <button onClick={printPdf} disabled={pdfBusy} style={{ padding: '7px 14px', background: '#fff', border: '1px solid #e0cba8', borderRadius: 8, fontSize: 12, color: '#5c3d1e', cursor: pdfBusy ? 'default' : 'pointer', whiteSpace: 'nowrap' }}>
+                  {pdfBusy ? '...' : 'Print'}
                 </button>
-                <button onClick={sharePdf} disabled={pdfBusy}
-                  style={{ padding: '7px 14px', background: '#fff', border: '1px solid #e0cba8', borderRadius: 8, fontSize: 12, color: '#5c3d1e', cursor: pdfBusy ? 'default' : 'pointer', whiteSpace: 'nowrap' }}>
+                <button onClick={sharePdf} disabled={pdfBusy} style={{ padding: '7px 14px', background: '#fff', border: '1px solid #e0cba8', borderRadius: 8, fontSize: 12, color: '#5c3d1e', cursor: pdfBusy ? 'default' : 'pointer', whiteSpace: 'nowrap' }}>
                   Share
                 </button>
               </>
@@ -839,29 +931,39 @@ const runPublish = async (mode, includeAnnouncements) => {
             {isSession && (
               <button onClick={() => setAsPresentation()} style={{ padding: '7px 14px', background: activeBulletinId === editing.id ? '#27ae60' : '#2c3e50', color: '#fff', border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 600, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5, whiteSpace: 'nowrap' }}>
                 {activeBulletinId === editing.id && <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#fff', boxShadow: '0 0 5px #fff8' }} />}
-                {activeBulletinId === editing.id ? 'Presenting' : '📺 Present'}
+                {activeBulletinId === editing.id ? 'Presenting' : 'Present'}
               </button>
             )}
             {status && <span style={{ fontSize: 12, color: statusColor, fontWeight: 500, whiteSpace: 'nowrap' }}>{status}</span>}
           </div>
         </div>
 
-        {/* Body — fills remaining height, never itself scrolls */}
+        {/* Body */}
         <div style={{ flex: 1, display: 'flex', overflow: 'hidden', maxWidth: 1400, width: '100%', margin: '0 auto', padding: '0 32px', boxSizing: 'border-box', gap: 24 }}>
 
-          {/* Sidebar — fixed in place, scrolls internally */}
+          {/* Sidebar */}
           <div style={{ width: 280, flexShrink: 0, overflowY: 'auto', scrollbarWidth: 'thin', display: 'flex', flexDirection: 'column', gap: 14, padding: '24px 0' }}>
             <Card><PresetLibrary presets={presets} onAdd={addPreset} onEdit={editPreset} onDelete={removePreset} onReorder={reorderPresets} /></Card>
             <Card><AnnouncementPresetLibrary presets={announcementPresets} onAdd={addAnnFromPreset} onEdit={editAnnPreset} onDelete={removeAnnPreset} onAddNew={addAnnPreset} /></Card>
             <Card style={{ border: `1.5px solid ${config.devMode ? '#22c55e55' : '#e8d9c0'}` }}><ConfigPanel /></Card>
           </div>
 
-          {/* Content — only this scrolls */}
+          {/* Content */}
           <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 18, padding: '24px 0' }}>
+
             {isSession && (
               <TelegramBar session={editing} publishing={publishing} devMode={config.devMode}
                 onPublish={publish} onRepublish={republish} onUndo={undoSend}
                 onPublishAnnouncements={publishAnnouncements} onUndoAnnouncements={undoAnnouncements} />
+            )}
+
+            {isSession && (
+              <HomilyBar
+                onPrint={() => { setHomilyMode('print'); setHomilyOpen(true); }}
+                onSend={() => { setHomilyMode('send'); setHomilyOpen(true); }}
+                publishing={homilyPublishing}
+                pdfBusy={homilyPdfBusy}
+              />
             )}
 
             <Card>
