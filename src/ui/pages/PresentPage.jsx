@@ -84,10 +84,7 @@ function cardMetrics(bodyH, n) {
   const br       = Math.min(8,  cardH * 0.08);
   const showNotes    = cardH > 52;
   const showContacts = cardH > 70;
-  // How many lines of the event name fit given the card height and font size
-  // lineHeight factor of 1.2 is tight but fits better in cards
-  const nameLines = Math.max(1, Math.floor((cardH * 0.65) / (nameSize * 1.2)));
-  return { gap, cardH, nameSize, timeSize, noteSize, dateSize, pad, barW, br, showNotes, showContacts, nameLines };
+  return { gap, cardH, nameSize, timeSize, noteSize, dateSize, pad, barW, br, showNotes, showContacts };
 }
 
 function DaySlide({ data, h, t }) {
@@ -96,7 +93,7 @@ function DaySlide({ data, h, t }) {
   const dt = fmtD(data.date, { weekday: 'long', month: 'long', day: 'numeric' });
 
   const TITLE_H = 86;
-  const { gap, cardH, nameSize, timeSize, noteSize, pad, showNotes, showContacts, nameLines } = cardMetrics(h - TITLE_H, n);
+  const { gap, cardH, nameSize, timeSize, noteSize, pad, showNotes, showContacts } = cardMetrics(h - TITLE_H, n);
 
   return (
     <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', padding: '20px 144px 16px', boxSizing: 'border-box', overflow: 'hidden' }}>
@@ -111,7 +108,7 @@ function DaySlide({ data, h, t }) {
         {evts.map((ev, i) => {
           const c = ev.color ?? t.gold;
           return (
-            <div key={i} style={{ display: 'flex', alignItems: 'stretch', height: cardH, maxHeight: cardH, borderRadius: Math.min(8, cardH * 0.1), overflow: 'hidden', background: t.cardBg, flexShrink: 0 }}>
+            <div key={i} style={{ display: 'flex', alignItems: 'stretch', minHeight: cardH, borderRadius: Math.min(8, cardH * 0.1), overflow: 'hidden', background: t.cardBg, flexShrink: 0 }}>
               <div style={{ width: Math.max(3, Math.min(5, cardH * 0.04)), background: c, flexShrink: 0 }} />
               {ev.image && (
                 <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: Math.max(3, pad * 0.4), width: cardH * 0.9, maxWidth: '22vw', background: 'rgba(0,0,0,0.1)' }}>
@@ -119,17 +116,13 @@ function DaySlide({ data, h, t }) {
                 </div>
               )}
               <div style={{ flex: 1, padding: `${pad * 0.5}px ${pad}px`, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 1, minWidth: 0, overflow: 'hidden' }}>
-                {/* Name: allow wrapping up to nameLines, then ellipsis */}
+                {/* Name: wrap freely onto as many lines as needed; card grows to fit */}
                 <div style={{
                   fontSize: nameSize,
                   fontFamily: "'Georgia',serif",
                   fontWeight: 700,
                   color: t.text,
                   lineHeight: 1.2,
-                  overflow: 'hidden',
-                  display: '-webkit-box',
-                  WebkitLineClamp: nameLines,
-                  WebkitBoxOrient: 'vertical',
                   wordBreak: 'break-word',
                 }}>
                   {ev.name}
@@ -238,7 +231,7 @@ function MultiSlide({ data, h, t }) {
   const n = data.length;
   const label = multiDayLabel(data);
   const TITLE_H = 66;
-  const { gap, cardH, nameSize, timeSize, noteSize, dateSize, pad, showNotes, nameLines } = cardMetrics(h - TITLE_H, n);
+  const { gap, cardH, nameSize, timeSize, noteSize, dateSize, pad, showNotes } = cardMetrics(h - TITLE_H, n);
 
   return (
     <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', padding: '20px 144px 16px', boxSizing: 'border-box', overflow: 'hidden' }}>
@@ -256,7 +249,7 @@ function MultiSlide({ data, h, t }) {
           const dateStr = ef ? `Daily · ${sf} through ${ef}` : sf;
 
           return (
-            <div key={i} style={{ display: 'flex', alignItems: 'stretch', height: cardH, maxHeight: cardH, flexShrink: 0, borderRadius: Math.min(8, cardH * 0.1), overflow: 'hidden', background: t.cardBg }}>
+            <div key={i} style={{ display: 'flex', alignItems: 'stretch', minHeight: cardH, flexShrink: 0, borderRadius: Math.min(8, cardH * 0.1), overflow: 'hidden', background: t.cardBg }}>
               <div style={{ width: Math.max(3, Math.min(5, cardH * 0.04)), background: c, flexShrink: 0 }} />
               {e.image && (
                 <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: Math.max(3, pad * 0.4), width: cardH * 0.9, maxWidth: '20vw', background: 'rgba(0,0,0,0.1)' }}>
@@ -264,17 +257,13 @@ function MultiSlide({ data, h, t }) {
                 </div>
               )}
               <div style={{ flex: 1, padding: `${pad * 0.5}px ${pad}px`, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: 2, minWidth: 0, overflow: 'hidden' }}>
-                {/* Name: wrap up to nameLines */}
+                {/* Name: wrap freely onto as many lines as needed; card grows to fit */}
                 <div style={{
                   fontSize: nameSize,
                   fontFamily: "'Georgia',serif",
                   fontWeight: 700,
                   color: t.text,
                   lineHeight: 1.2,
-                  overflow: 'hidden',
-                  display: '-webkit-box',
-                  WebkitLineClamp: nameLines,
-                  WebkitBoxOrient: 'vertical',
                   wordBreak: 'break-word',
                 }}>
                   {e.name}
