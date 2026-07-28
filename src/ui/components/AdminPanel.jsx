@@ -25,6 +25,7 @@ import SaveTemplateModal from './SaveTemplateModal';
 import ConfigPanel from './ConfigPanel';
 import HomilyExportModal from './HomilyExportModal';
 import { useAppConfig } from '../../hooks/useAppConfig';
+import { useIsMobile } from '../../hooks/useIsMobile';
 
 const repo     = new FirebaseBulletinRepo();
 const exporter = new ReactPDFExporter();
@@ -193,6 +194,7 @@ function HomilyBar({ onPrint, onSend, publishing, pdfBusy }) {
 // ── Main ──────────────────────────────────────────────────────
 export default function AdminPanel() {
   const { config } = useAppConfig();
+  const isMobile = useIsMobile();
 
   const [sessions,            setSessions]            = useState([]);
   const [templates,           setTemplates]           = useState([]);
@@ -735,7 +737,7 @@ export default function AdminPanel() {
         )}
 
         <div style={{ background: 'linear-gradient(135deg, #2e1a08 0%, #5c3d1e 100%)', boxShadow: '0 2px 24px rgba(46,26,8,0.3)' }}>
-          <div style={{ maxWidth: 960, margin: '0 auto', padding: '20px 32px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ maxWidth: 960, margin: '0 auto', padding: isMobile ? '16px 18px' : '20px 32px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: isMobile ? 'wrap' : 'nowrap', gap: isMobile ? 12 : 0 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
               <div style={{ width: 38, height: 38, borderRadius: '50%', background: 'rgba(212,160,23,0.15)', border: '1.5px solid rgba(212,160,23,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16, color: '#d4a017' }}>✝</div>
               <div>
@@ -744,7 +746,7 @@ export default function AdminPanel() {
               </div>
               {config.devMode && <span style={{ fontSize: 10, fontWeight: 700, color: '#22c55e', background: 'rgba(34,197,94,0.1)', padding: '3px 10px', borderRadius: 4, border: '1px solid rgba(34,197,94,0.3)', letterSpacing: 1, textTransform: 'uppercase' }}>Dev Mode</span>}
             </div>
-            <div style={{ display: 'flex', gap: 10 }}>
+            <div style={{ display: 'flex', gap: 10, flexWrap: isMobile ? 'wrap' : 'nowrap' }}>
               <button onClick={() => setWizardOpen(true)} style={btn('#b8860b', '#d4a017')}>+ New Session</button>
               <button onClick={createNewTemplate} style={{ padding: '8px 20px', background: 'rgba(255,255,255,0.08)', color: 'rgba(255,255,255,0.7)', border: '1px solid rgba(255,255,255,0.15)', borderRadius: 8, fontSize: 13, cursor: 'pointer' }}>+ New Template</button>
               <a href="/" style={{ color: 'rgba(255,255,255,0.4)', fontSize: 12, textDecoration: 'none', padding: '8px 12px', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 6, display: 'flex', alignItems: 'center' }}>Present →</a>
@@ -752,7 +754,7 @@ export default function AdminPanel() {
           </div>
         </div>
 
-        <div style={{ maxWidth: 960, margin: '0 auto', padding: '24px 32px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24, alignItems: 'start' }}>
+        <div style={{ maxWidth: 960, margin: '0 auto', padding: isMobile ? '16px' : '24px 32px', display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: isMobile ? 16 : 24, alignItems: 'start' }}>
           <div>
             <SectionTitle>Sessions ({sessions.length})</SectionTitle>
             {sessions.length === 0 && <EmptyMsg>No sessions yet.</EmptyMsg>}
@@ -785,7 +787,7 @@ export default function AdminPanel() {
 
   return (
     <DragProvider onDrop={handleDrop} onSort={handleSort} onEventReorder={handleEventReorder}>
-      <div style={{ height: '100vh', display: 'flex', flexDirection: 'column', background: '#f4ece0', fontFamily: 'Inter, sans-serif', overflow: 'hidden' }}>
+      <div style={{ height: isMobile ? 'auto' : '100vh', minHeight: isMobile ? '100vh' : undefined, display: 'flex', flexDirection: 'column', background: '#f4ece0', fontFamily: 'Inter, sans-serif', overflow: isMobile ? 'visible' : 'hidden' }}>
         {config.devMode && <div style={{ position: 'fixed', inset: 0, border: '4px solid #22c55e', pointerEvents: 'none', zIndex: 99999 }} />}
 
         <ConfirmModal {...confirm} onCancel={closeConfirm} />
@@ -837,7 +839,7 @@ export default function AdminPanel() {
 
         {/* Bar 1 — dark */}
         <div style={{ background: 'linear-gradient(135deg, #2e1a08 0%, #5c3d1e 100%)', boxShadow: '0 2px 24px rgba(46,26,8,0.3)', flexShrink: 0, zIndex: 51 }}>
-          <div style={{ maxWidth: 1400, margin: '0 auto', padding: '14px 32px', display: 'flex', alignItems: 'center', gap: 14 }}>
+          <div style={{ maxWidth: 1400, margin: '0 auto', padding: isMobile ? '12px 16px' : '14px 32px', display: 'flex', alignItems: 'center', gap: isMobile ? 10 : 14, flexWrap: isMobile ? 'wrap' : 'nowrap' }}>
             <button onClick={backToList} style={{ background: 'none', border: '1px solid rgba(255,255,255,0.15)', color: 'rgba(255,255,255,0.6)', fontSize: 12, cursor: 'pointer', padding: '6px 12px', borderRadius: 6, flexShrink: 0 }}>← Back</button>
             <div style={{ width: 32, height: 32, borderRadius: '50%', background: 'rgba(212,160,23,0.15)', border: '1.5px solid rgba(212,160,23,0.35)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, color: '#d4a017', flexShrink: 0 }}>✝</div>
             <div style={{ flex: 1, minWidth: 0 }}>
@@ -859,7 +861,7 @@ export default function AdminPanel() {
 
         {/* Bar 2 — white */}
         <div style={{ background: '#fff', borderBottom: '1.5px solid #e8d9c0', boxShadow: '0 1px 6px rgba(92,61,30,0.07)', flexShrink: 0, zIndex: 50 }}>
-          <div style={{ maxWidth: 1400, margin: '0 auto', padding: '8px 32px', display: 'flex', gap: 8, alignItems: 'center' }}>
+          <div style={{ maxWidth: 1400, margin: '0 auto', padding: isMobile ? '8px 16px' : '8px 32px', display: 'flex', gap: 8, alignItems: 'center', flexWrap: isMobile ? 'wrap' : 'nowrap' }}>
             <div style={{ display: 'flex', gap: 2, flexShrink: 0 }}>
               <button onClick={undo} disabled={!canUndo}
                 title={`Undo (${navigator.platform.includes('Mac') ? '⌘' : 'Ctrl'}+Z) · ${history.length} step${history.length !== 1 ? 's' : ''}`}
@@ -939,17 +941,17 @@ export default function AdminPanel() {
         </div>
 
         {/* Body */}
-        <div style={{ flex: 1, display: 'flex', overflow: 'hidden', maxWidth: 1400, width: '100%', margin: '0 auto', padding: '0 32px', boxSizing: 'border-box', gap: 24 }}>
+        <div style={{ flex: 1, display: 'flex', flexDirection: isMobile ? 'column' : 'row', overflow: isMobile ? 'visible' : 'hidden', maxWidth: 1400, width: '100%', margin: '0 auto', padding: isMobile ? '0 16px' : '0 32px', boxSizing: 'border-box', gap: isMobile ? 14 : 24 }}>
 
           {/* Sidebar */}
-          <div style={{ width: 280, flexShrink: 0, overflowY: 'auto', scrollbarWidth: 'thin', display: 'flex', flexDirection: 'column', gap: 14, padding: '24px 0' }}>
+          <div style={{ width: isMobile ? '100%' : 280, flexShrink: 0, overflowY: isMobile ? 'visible' : 'auto', scrollbarWidth: 'thin', display: 'flex', flexDirection: 'column', gap: 14, padding: isMobile ? '14px 0 0' : '24px 0' }}>
             <Card><PresetLibrary presets={presets} onAdd={addPreset} onEdit={editPreset} onDelete={removePreset} onReorder={reorderPresets} /></Card>
             <Card><AnnouncementPresetLibrary presets={announcementPresets} onAdd={addAnnFromPreset} onEdit={editAnnPreset} onDelete={removeAnnPreset} onAddNew={addAnnPreset} /></Card>
             <Card style={{ border: `1.5px solid ${config.devMode ? '#22c55e55' : '#e8d9c0'}` }}><ConfigPanel /></Card>
           </div>
 
           {/* Content */}
-          <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 18, padding: '24px 0' }}>
+          <div style={{ flex: 1, minWidth: 0, overflowY: isMobile ? 'visible' : 'auto', display: 'flex', flexDirection: 'column', gap: 18, padding: isMobile ? '0 0 24px' : '24px 0' }}>
 
             {isSession && (
               <TelegramBar session={editing} publishing={publishing} devMode={config.devMode}

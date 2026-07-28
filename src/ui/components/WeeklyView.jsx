@@ -3,6 +3,7 @@ import { TimePicker, DatePicker } from './DrumPicker';
 import ImagePicker from './ImagePicker';
 import { useDrag } from '../drag/useDrag.js';
 import { useDragCtx } from '../drag/DragContext.jsx';
+import { useIsMobile } from '../../hooks/useIsMobile';
 
 const ALL_DAYS = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
 const prevDayName = day => ALL_DAYS[(ALL_DAYS.indexOf(day) - 1 + 7) % 7];
@@ -35,7 +36,7 @@ function EventCard({ event, dayIdx, eventIdx, onUpdate, onRemove, presets }) {
   const original = presets?.find(p => p.id === event.presetId);
   const color = event.color ?? '#b8860b';
   const cardRef = useRef(null);
-  const { onMouseDown: onSortDrag } = useDrag('event-sort', { event, dayIdx, eventIdx });
+  const { onMouseDown: onSortDrag, onTouchStart: onSortTouch } = useDrag('event-sort', { event, dayIdx, eventIdx });
   const { dragging, overSort, overZone, registerSortZone } = useDragCtx();
   const sortId = `event-${dayIdx}-${eventIdx}`;
 
@@ -87,7 +88,7 @@ function EventCard({ event, dayIdx, eventIdx, onUpdate, onRemove, presets }) {
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', cursor: 'pointer' }}
           onClick={() => setExpanded(e => !e)}>
-          <div onMouseDown={onSortDrag} style={{ cursor: 'grab', color: '#d0b88a', fontSize: 12, padding: '0 2px', userSelect: 'none' }}>⠿</div>
+          <div onMouseDown={onSortDrag} onTouchStart={onSortTouch} style={{ cursor: 'grab', color: '#d0b88a', fontSize: 12, padding: '4px 6px', margin: '-4px -4px -4px -2px', userSelect: 'none', touchAction: 'none' }}>⠿</div>
           <div style={{ width: 10, height: 10, borderRadius: '50%', background: color, flexShrink: 0 }} />
           <span style={{ flex: 1, fontSize: 13, fontWeight: 600, color: '#3d2408' }}>{event.name || 'Unnamed event'}</span>
           {event.modified && <span style={{ fontSize: 9, color: '#b8860b', background: '#fdf6ec', padding: '1px 5px', borderRadius: 3, border: '1px solid #e8d9c0' }}>edited</span>}
@@ -178,6 +179,7 @@ function DayDropZone({ dayData, dayIdx, onUpdateDay, onRemoveDay, presets }) {
   const zoneId = `day-${dayIdx}`;
   const { registerZone, dragging, overZone } = useDragCtx();
   const outerRef = useRef(null);
+  const isMobile = useIsMobile();
 
   // Register the OUTER card div so the full card area (including header and events) is hittable
   useEffect(() => {
@@ -211,6 +213,7 @@ function DayDropZone({ dayData, dayIdx, onUpdateDay, onRemoveDay, presets }) {
         background: showHighlight ? '#fff8e8' : '#fff8ee',
         borderBottom: '1px solid #f0e4cc',
         transition: 'background 0.15s',
+        flexWrap: isMobile ? 'wrap' : 'nowrap',
       }}>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
           <span style={{ fontSize: 14, fontWeight: 700, color: showHighlight ? '#b8860b' : '#5c3d1e', transition: 'color 0.15s' }}>{dayData.day}</span>

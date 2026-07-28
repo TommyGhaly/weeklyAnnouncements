@@ -30,13 +30,16 @@ export default function AdminPage() {
       justifyContent: 'center',
       background: '#f4ece0',
       fontFamily: 'Inter, sans-serif',
+      padding: 16,
+      boxSizing: 'border-box',
     }}>
       <div style={{
         background: '#fff',
         border: '1.5px solid #e8d9c0',
         borderRadius: 20,
         padding: '52px 44px',
-        width: 380,
+        width: '100%',
+        maxWidth: 380,
         boxShadow: '0 8px 40px rgba(92,61,30,0.12)',
         display: 'flex',
         flexDirection: 'column',

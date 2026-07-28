@@ -36,8 +36,7 @@ export default function DragProvider({ children, onDrop, onSort, onEventReorder 
       return null;
     };
 
-    const onMove = e => {
-      const x = e.clientX, y = e.clientY;
+    const moveAt = (x, y) => {
       cancelAnimationFrame(frameRef.current);
       frameRef.current = requestAnimationFrame(() => {
         setDragging(d => d ? { ...d, x, y } : null);
@@ -72,8 +71,7 @@ export default function DragProvider({ children, onDrop, onSort, onEventReorder 
       });
     };
 
-    const onUp = e => {
-      const x = e.clientX, y = e.clientY;
+    const upAt = (x, y) => {
       cancelAnimationFrame(frameRef.current);
 
       const sortTarget = hitTest(sortZonesRef.current, x, y);
@@ -93,11 +91,31 @@ export default function DragProvider({ children, onDrop, onSort, onEventReorder 
       setOverSort(null);
     };
 
-    window.addEventListener('mousemove', onMove);
-    window.addEventListener('mouseup', onUp);
+    const onMouseMove = e => moveAt(e.clientX, e.clientY);
+    const onMouseUp   = e => upAt(e.clientX, e.clientY);
+    const onTouchMove = e => {
+      const t = e.touches[0];
+      if (!t) return;
+      e.preventDefault(); // stop the page scrolling while a drag is in progress
+      moveAt(t.clientX, t.clientY);
+    };
+    const onTouchEnd = e => {
+      const t = e.changedTouches[0];
+      if (t) upAt(t.clientX, t.clientY);
+      else { setDragging(null); setOverZone(null); setOverSort(null); }
+    };
+
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+    window.addEventListener('touchmove', onTouchMove, { passive: false });
+    window.addEventListener('touchend', onTouchEnd);
+    window.addEventListener('touchcancel', onTouchEnd);
     return () => {
-      window.removeEventListener('mousemove', onMove);
-      window.removeEventListener('mouseup', onUp);
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+      window.removeEventListener('touchmove', onTouchMove);
+      window.removeEventListener('touchend', onTouchEnd);
+      window.removeEventListener('touchcancel', onTouchEnd);
       cancelAnimationFrame(frameRef.current);
     };
   }, [dragging, onDrop, onSort, onEventReorder]);

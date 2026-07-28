@@ -9,8 +9,8 @@ const COLORS = ['#b8860b','#7a5230','#4a7c59','#1a5276','#6d3b8e','#8b4513','#c0
 
 // ── Preset card ───────────────────────────────────────────────
 function PresetCard({ preset, index, total, onEdit, onDelete }) {
-  const { onMouseDown: onDayDrag, isDragging } = useDrag('preset', preset);
-  const { onMouseDown: onSortDrag } = useDrag('sort', { preset, index });
+  const { onMouseDown: onDayDrag, onTouchStart: onDayTouch, isDragging } = useDrag('preset', preset);
+  const { onMouseDown: onSortDrag, onTouchStart: onSortTouch } = useDrag('sort', { preset, index });
   const { dragging, overSort, registerSortZone } = useDragCtx();
   const cardRef = useRef(null);
   const isSortDragging = dragging?.type === 'sort' && dragging?.data?.preset?.id === preset.id;
@@ -45,12 +45,14 @@ function PresetCard({ preset, index, total, onEdit, onDelete }) {
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '9px 12px' }}>
           <div
             onMouseDown={onSortDrag}
-            style={{ color: '#d0b88a', fontSize: 16, cursor: 'grab', flexShrink: 0, lineHeight: 1, touchAction: 'none', padding: '0 2px' }}
+            onTouchStart={onSortTouch}
+            style={{ color: '#d0b88a', fontSize: 16, cursor: 'grab', flexShrink: 0, lineHeight: 1, touchAction: 'none', padding: '4px 6px' }}
             title="Drag to reorder"
           >⠿</div>
           <div
             onMouseDown={onDayDrag}
-            style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0, cursor: 'grab' }}
+            onTouchStart={onDayTouch}
+            style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0, cursor: 'grab', touchAction: 'none' }}
             title="Drag to schedule on a day"
           >
             <div style={{ width: 10, height: 10, borderRadius: '50%', background: preset.color, flexShrink: 0 }} />
@@ -132,16 +134,17 @@ function PresetForm({ initial, onSave, onCancel }) {
 
 // ── One-time draggable ────────────────────────────────────────
 function OneTimeDraggable() {
-  const { onMouseDown, isDragging } = useDrag('one-time', { name: 'New Event', color: '#b8860b' });
+  const { onMouseDown, onTouchStart, isDragging } = useDrag('one-time', { name: 'New Event', color: '#b8860b' });
   return (
     <div
       onMouseDown={onMouseDown}
+      onTouchStart={onTouchStart}
       style={{
         padding: '9px 12px', background: isDragging ? '#fffbf0' : '#fff',
         border: '1.5px dashed #c9a96e', borderRadius: 8,
         color: '#7a5230', fontSize: 13, fontWeight: 500,
         cursor: 'grab', userSelect: 'none', opacity: isDragging ? 0.5 : 1,
-        display: 'flex', alignItems: 'center', gap: 8,
+        display: 'flex', alignItems: 'center', gap: 8, touchAction: 'none',
       }}
     >
       <span style={{ color: '#c9a96e', fontSize: 16 }}>＋</span>

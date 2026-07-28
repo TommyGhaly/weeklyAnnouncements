@@ -10,7 +10,15 @@ export function useDrag(type, data) {
     ctx?.startDrag(type, data, e.clientX, e.clientY);
   }, [type, data, ctx]);
 
+  // Touch equivalent — mobile devices don't fire usable mouse events for drags.
+  const onTouchStart = useCallback(e => {
+    e.stopPropagation();
+    const t = e.touches[0];
+    if (!t) return;
+    ctx?.startDrag(type, data, t.clientX, t.clientY);
+  }, [type, data, ctx]);
+
   const isDragging = false; // never dim — let DragContext ghost handle visual feedback
 
-  return { onMouseDown, isDragging };
+  return { onMouseDown, onTouchStart, isDragging };
 }
