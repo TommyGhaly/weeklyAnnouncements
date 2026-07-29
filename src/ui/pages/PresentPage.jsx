@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { FirebaseBulletinRepo } from '../../adapters/firebase/FirebaseBulletinRepo';
 import { CHURCH_NAME } from '../../core/domain/Bulletin';
 import { useAppConfig } from '../../hooks/useAppConfig';
+import { useIsMobile } from '../../hooks/useIsMobile';
 import { buildSlides, slideDurationMs } from '../../utils/slideUtils';
 
 const repo = new FirebaseBulletinRepo();
@@ -72,12 +73,20 @@ function TitleBar({ color }) {
 }
 
 // Single source of truth for card metrics derived from available body height and item count.
-function cardMetrics(bodyH, n) {
-  const gap   = Math.max(2, Math.min(6, Math.floor(bodyH / Math.max(n, 1) / 10)));
-  const cardH = n > 0 ? Math.floor((bodyH - gap * (n - 1)) / n * 0.85) : Math.floor(bodyH * 0.85);
-  const nameSize = Math.min(42, Math.max(11, cardH * 0.32));
-  const timeSize = Math.min(28, Math.max(9,  cardH * 0.20));
-  const noteSize = Math.min(14, Math.max(8,  cardH * 0.11));
+// `compact` (mobile/portrait) caps the type scale so big cardH values don't blow text up
+// past the narrow column width, which would force ugly mid-word breaks.
+function cardMetrics(bodyH, n, compact = false) {
+  const gap    = Math.max(2, Math.min(6, Math.floor(bodyH / Math.max(n, 1) / 10)));
+  const rawH   = n > 0 ? Math.floor((bodyH - gap * (n - 1)) / n * 0.85) : Math.floor(bodyH * 0.85);
+  // On mobile portrait, cap card height so a 1–2 event day doesn't stretch into
+  // a giant sparse card with an over-tall image column.
+  const cardH  = compact ? Math.min(rawH, 132) : rawH;
+  const nameMax = compact ? 24 : 42;
+  const timeMax = compact ? 18 : 28;
+  const noteMax = compact ? 13 : 14;
+  const nameSize = Math.min(nameMax, Math.max(compact ? 14 : 11, cardH * 0.32));
+  const timeSize = Math.min(timeMax, Math.max(9,  cardH * 0.20));
+  const noteSize = Math.min(noteMax, Math.max(8,  cardH * 0.11));
   const dateSize = Math.min(13, Math.max(8,  cardH * 0.09));
   const pad      = Math.min(18, Math.max(3,  cardH * 0.11));
   const barW     = Math.max(3,  Math.min(5,  cardH * 0.04));
@@ -87,16 +96,18 @@ function cardMetrics(bodyH, n) {
   return { gap, cardH, nameSize, timeSize, noteSize, dateSize, pad, barW, br, showNotes, showContacts };
 }
 
-function DaySlide({ data, h, t }) {
+function DaySlide({ data, h, t, padX = 144 }) {
   const evts = data.events ?? [];
   const n = evts.length;
   const dt = fmtD(data.date, { weekday: 'long', month: 'long', day: 'numeric' });
 
-  const TITLE_H = 86;
-  const { gap, cardH, nameSize, timeSize, noteSize, pad, showNotes, showContacts } = cardMetrics(h - TITLE_H, n);
+  const compact = padX <= 24;
+  const TITLE_H = compact ? 60 : 86;
+  const { gap, cardH, nameSize, timeSize, noteSize, pad, showNotes, showContacts } = cardMetrics(h - TITLE_H, n, compact);
+  const imgW = compact ? Math.min(cardH * 0.9, 64) : cardH * 0.9;
 
   return (
-    <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', padding: '20px 144px 16px', boxSizing: 'border-box', overflow: 'hidden' }}>
+    <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', padding: `20px ${padX}px 16px`, boxSizing: 'border-box', overflow: 'hidden' }}>
       <div style={{ height: TITLE_H, flexShrink: 0, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', paddingBottom: 8 }}>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 14 }}>
           <span style={{ fontSize: 'clamp(32px,5vw,64px)', fontFamily: "'Georgia',serif", fontWeight: 700, color: t.text, lineHeight: 1 }}>{data.day}</span>
@@ -104,14 +115,14 @@ function DaySlide({ data, h, t }) {
         </div>
         <TitleBar color={t.gold} />
       </div>
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap, overflow: 'hidden' }}>
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: compact ? 'center' : 'flex-start', gap, overflow: 'hidden' }}>
         {evts.map((ev, i) => {
           const c = ev.color ?? t.gold;
           return (
             <div key={i} style={{ display: 'flex', alignItems: 'stretch', minHeight: cardH, borderRadius: Math.min(8, cardH * 0.1), overflow: 'hidden', background: t.cardBg, flexShrink: 0 }}>
               <div style={{ width: Math.max(3, Math.min(5, cardH * 0.04)), background: c, flexShrink: 0 }} />
               {ev.image && (
-                <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: Math.max(3, pad * 0.4), width: cardH * 0.9, maxWidth: '22vw', background: 'rgba(0,0,0,0.1)' }}>
+                <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: Math.max(3, pad * 0.4), width: imgW, maxWidth: compact ? 64 : '22vw', background: 'rgba(0,0,0,0.1)' }}>
                   <img src={ev.image} alt="" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', borderRadius: 4 }} />
                 </div>
               )}
@@ -164,9 +175,9 @@ const ANN_GAP = 10;             // gap between cards
 const ANN_TITLE_H = 86;
 const ANN_BODY_PAD_V = 36;      // 20 top + 16 bottom from the slide padding
 
-function AnnSlide({ data, t, page, totalPages }) {
+function AnnSlide({ data, t, page, totalPages, padX = 144 }) {
   return (
-    <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', padding: '20px 144px 16px', boxSizing: 'border-box', overflow: 'hidden' }}>
+    <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', padding: `20px ${padX}px 16px`, boxSizing: 'border-box', overflow: 'hidden' }}>
       <div style={{ height: ANN_TITLE_H, flexShrink: 0, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', paddingBottom: 8 }}>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 14 }}>
           <span style={{ fontSize: 'clamp(28px,4.5vw,56px)', fontFamily: "'Georgia',serif", fontWeight: 700, color: t.text, lineHeight: 1 }}>
@@ -218,28 +229,30 @@ function AnnSlide({ data, t, page, totalPages }) {
   );
 }
 
-function RenderSlide({ slide, h, t }) {
+function RenderSlide({ slide, h, t, padX }) {
   if (!slide) return null;
-  if (slide.type === 'day')   return <DaySlide   data={slide.data} h={h} t={t} />;
-  if (slide.type === 'ann')   return <AnnSlide   data={slide.data} h={h} t={t} page={slide.page ?? 1} totalPages={slide.totalPages ?? 1} />;
-  if (slide.type === 'multi') return <MultiSlide data={slide.data} h={h} t={t} />;
-  if (slide.type === 'img')   return <ImgSlide   data={slide.data} t={t} />;
+  if (slide.type === 'day')   return <DaySlide   data={slide.data} h={h} t={t} padX={padX} />;
+  if (slide.type === 'ann')   return <AnnSlide   data={slide.data} h={h} t={t} page={slide.page ?? 1} totalPages={slide.totalPages ?? 1} padX={padX} />;
+  if (slide.type === 'multi') return <MultiSlide data={slide.data} h={h} t={t} padX={padX} />;
+  if (slide.type === 'img')   return <ImgSlide   data={slide.data} t={t} padX={padX} />;
   return null;
 }
 
-function MultiSlide({ data, h, t }) {
+function MultiSlide({ data, h, t, padX = 144 }) {
   const n = data.length;
   const label = multiDayLabel(data);
-  const TITLE_H = 66;
-  const { gap, cardH, nameSize, timeSize, noteSize, dateSize, pad, showNotes } = cardMetrics(h - TITLE_H, n);
+  const compact = padX <= 24;
+  const TITLE_H = compact ? 52 : 66;
+  const { gap, cardH, nameSize, timeSize, noteSize, dateSize, pad, showNotes } = cardMetrics(h - TITLE_H, n, compact);
+  const imgW = compact ? Math.min(cardH * 0.9, 64) : cardH * 0.9;
 
   return (
-    <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', padding: '20px 144px 16px', boxSizing: 'border-box', overflow: 'hidden' }}>
+    <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', padding: `20px ${padX}px 16px`, boxSizing: 'border-box', overflow: 'hidden' }}>
       <div style={{ height: TITLE_H, flexShrink: 0, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', paddingBottom: 8 }}>
         <div style={{ fontSize: 'clamp(28px,4.5vw,56px)', fontFamily: "'Georgia',serif", fontWeight: 700, color: t.text, lineHeight: 1 }}>{label}</div>
         <TitleBar color={t.purple} />
       </div>
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap, overflow: 'hidden' }}>
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: compact ? 'center' : 'flex-start', gap, overflow: 'hidden' }}>
         {data.map((e, i) => {
           const c = e.color ?? t.purple;
           const startD = e.startDate ? new Date(e.startDate + 'T00:00:00') : null;
@@ -252,7 +265,7 @@ function MultiSlide({ data, h, t }) {
             <div key={i} style={{ display: 'flex', alignItems: 'stretch', minHeight: cardH, flexShrink: 0, borderRadius: Math.min(8, cardH * 0.1), overflow: 'hidden', background: t.cardBg }}>
               <div style={{ width: Math.max(3, Math.min(5, cardH * 0.04)), background: c, flexShrink: 0 }} />
               {e.image && (
-                <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: Math.max(3, pad * 0.4), width: cardH * 0.9, maxWidth: '20vw', background: 'rgba(0,0,0,0.1)' }}>
+                <div style={{ flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: Math.max(3, pad * 0.4), width: imgW, maxWidth: compact ? 64 : '20vw', background: 'rgba(0,0,0,0.1)' }}>
                   <img src={e.image} alt="" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', borderRadius: 4 }} />
                 </div>
               )}
@@ -291,9 +304,9 @@ function MultiSlide({ data, h, t }) {
   );
 }
 
-function ImgSlide({ data, t }) {
+function ImgSlide({ data, t, padX = 144 }) {
   return (
-    <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '32px 64px', boxSizing: 'border-box', overflow: 'hidden' }}>
+    <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: padX <= 24 ? '20px 20px' : '32px 64px', boxSizing: 'border-box', overflow: 'hidden' }}>
       <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 0, width: '100%' }}>
         <img src={data.url} alt="" style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', borderRadius: 10 }} />
       </div>
@@ -302,7 +315,7 @@ function ImgSlide({ data, t }) {
   );
 }
 
-function useAnnouncementPages(announcements, bodyH) {
+function useAnnouncementPages(announcements, bodyH, padX = 144) {
   const [pages, setPages] = useState(null);
   const measureRef = useRef(null);
 
@@ -338,7 +351,7 @@ function useAnnouncementPages(announcements, bodyH) {
       setPages(result);
     });
     return () => cancelAnimationFrame(id);
-  }, [announcements, bodyH]);
+  }, [announcements, bodyH, padX]);
 
   // The hidden measurer renders cards at the same width and styling as the real slide
   const measurer = (
@@ -349,7 +362,7 @@ function useAnnouncementPages(announcements, bodyH) {
         position: 'fixed',
         top: -99999,
         left: 0,
-        width: 'calc(100vw - 288px)', // matches 144px L/R padding
+        width: `calc(100vw - ${padX * 2}px)`, // matches the slide's L/R padding
         visibility: 'hidden',
         pointerEvents: 'none',
         display: 'flex',
@@ -390,6 +403,9 @@ function useAnnouncementPages(announcements, bodyH) {
 export default function PresentPage() {
   const { config } = useAppConfig();
   const t        = mkTheme(config.lightMode);
+  const isMobile = useIsMobile();
+  const padX     = isMobile ? 18 : 144;  // slide L/R padding — 144px is tuned for wide screens
+  const edgeX    = isMobile ? 16 : 64;   // header/footer L/R padding
   const baseline    = config.slideBaseline    ?? 10;
   const multiplier  = config.slideMultiplier  ?? 0.4;
 
@@ -434,7 +450,7 @@ const fs = () => { if (!document.fullscreenElement) cRef.current?.requestFullscr
 
 const rawSlides = useMemo(() => bulletin ? buildSlides(bulletin) : [], [bulletin]);
 const annSlide = useMemo(() => rawSlides.find(s => s.type === 'ann'), [rawSlides]);
-const { pages: annPages, measurer } = useAnnouncementPages(annSlide?.data, bodyH);
+const { pages: annPages, measurer } = useAnnouncementPages(annSlide?.data, bodyH, padX);
 
 const slides = useMemo(() => {
   if (!rawSlides.length) return [];
@@ -523,7 +539,7 @@ const total = slides.length;
         <div style={{ height: '100%', width: `${progress}%`, background: t.gold, transition: 'width 0.05s linear' }} />
       </div>
 
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 64px', flexShrink: 0, zIndex: 10, borderBottom: `1px solid ${t.headerBorder}` }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, padding: `12px ${edgeX}px`, flexShrink: 0, zIndex: 10, borderBottom: `1px solid ${t.headerBorder}` }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <span style={{ fontSize: 22, color: t.gold, fontFamily: "'Georgia',serif" }}>✝</span>
           <div>
@@ -552,12 +568,12 @@ const total = slides.length;
           </div>
         ) : (
           <div key={fadeKey} className="si" style={{ width: '100%', height: '100%' }}>
-            <RenderSlide slide={slides[index]} h={bodyH} t={t} />
+            <RenderSlide slide={slides[index]} h={bodyH} t={t} padX={padX} />
           </div>
         )}
       </div>
 
-      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 16, padding: '10px 64px', flexShrink: 0, zIndex: 10, borderTop: `1px solid ${t.footerBorder}` }}>
+      <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 16, padding: `10px ${edgeX}px`, flexShrink: 0, zIndex: 10, borderTop: `1px solid ${t.footerBorder}` }}>
         <button onClick={e => { e.stopPropagation(); prev(); }} disabled={index === 0}
           style={{ background: 'none', border: 'none', color: index === 0 ? t.dotInactive : t.ctrlColor, fontSize: 18, cursor: index === 0 ? 'default' : 'pointer' }}>‹</button>
         <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
