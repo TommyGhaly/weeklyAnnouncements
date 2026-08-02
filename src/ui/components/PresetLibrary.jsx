@@ -1,4 +1,5 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useLayoutEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { createPreset } from '../../core/domain/Bulletin';
 import { TimePicker } from './DrumPicker';
 import ImagePicker from './ImagePicker';
@@ -6,6 +7,50 @@ import { useDrag } from '../drag/useDrag.js';
 import { useDragCtx } from '../drag/DragContext.jsx';
 
 const COLORS = ['#b8860b','#7a5230','#4a7c59','#1a5276','#6d3b8e','#8b4513','#c0392b','#2c7a7b'];
+
+// ── Hover tooltip showing the full preset name ────────────────
+const TIP_DELAY = 220;
+const TIP_MAX_W = 300;
+
+function NameTooltip({ anchor, name, hint }) {
+  const tipRef = useRef(null);
+  const [pos, setPos] = useState(null);
+
+  useLayoutEffect(() => {
+    const a = anchor?.getBoundingClientRect();
+    const t = tipRef.current?.getBoundingClientRect();
+    if (!a || !t) return;
+    const gap = 8;
+    let left = a.left;
+    let top = a.bottom + gap;
+    if (left + t.width > window.innerWidth - 8) left = window.innerWidth - 8 - t.width;
+    if (left < 8) left = 8;
+    if (top + t.height > window.innerHeight - 8) top = Math.max(8, a.top - gap - t.height);
+    setPos({ left, top });
+  }, [anchor, name, hint]);
+
+  return createPortal(
+    <div
+      ref={tipRef}
+      style={{
+        position: 'fixed',
+        left: pos?.left ?? 0, top: pos?.top ?? 0,
+        maxWidth: TIP_MAX_W,
+        background: '#3d2408', color: '#fdf6ec',
+        border: '1px solid #5c3d1e', borderRadius: 8,
+        padding: '7px 10px', zIndex: 9999, pointerEvents: 'none',
+        boxShadow: '0 6px 20px rgba(61,36,8,0.28)',
+        fontFamily: 'Inter, sans-serif',
+        opacity: pos ? 1 : 0,
+        transform: pos ? 'translateY(0)' : 'translateY(-3px)',
+        transition: 'opacity 0.12s ease, transform 0.12s ease',
+      }}>
+      <div style={{ fontSize: 12.5, fontWeight: 600, lineHeight: 1.35, overflowWrap: 'anywhere' }}>{name}</div>
+      {hint && <div style={{ fontSize: 10.5, color: '#c9a96e', marginTop: 3 }}>{hint}</div>}
+    </div>,
+    document.body,
+  );
+}
 
 // ── Preset card ───────────────────────────────────────────────
 function PresetCard({ preset, index, total, onEdit, onDelete }) {
@@ -16,6 +61,18 @@ function PresetCard({ preset, index, total, onEdit, onDelete }) {
   const isSortDragging = dragging?.type === 'sort' && dragging?.data?.preset?.id === preset.id;
   const indicator = overSort?.id === `sort-${preset.id}` && dragging?.type === 'sort' && !isSortDragging
     ? overSort.position : null;
+
+  const [tipAnchor, setTipAnchor] = useState(null);
+  const tipTimer = useRef(null);
+  const clearTip = () => { clearTimeout(tipTimer.current); setTipAnchor(null); };
+  const scheduleTip = e => {
+    const el = e.currentTarget;
+    clearTimeout(tipTimer.current);
+    tipTimer.current = setTimeout(() => setTipAnchor(el), TIP_DELAY);
+  };
+  useEffect(() => () => clearTimeout(tipTimer.current), []);
+  // Never leave a tooltip hanging over a drag in progress.
+  const showTip = tipAnchor && !dragging;
 
   useEffect(() => {
     registerSortZone(`sort-${preset.id}`, cardRef.current, { preset, index });
@@ -50,10 +107,11 @@ function PresetCard({ preset, index, total, onEdit, onDelete }) {
             title="Drag to reorder"
           >⠿</div>
           <div
-            onMouseDown={onDayDrag}
+            onMouseDown={e => { clearTip(); onDayDrag(e); }}
             onTouchStart={onDayTouch}
+            onMouseEnter={scheduleTip}
+            onMouseLeave={clearTip}
             style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0, cursor: 'grab', touchAction: 'none' }}
-            title="Drag to schedule on a day"
           >
             <div style={{ width: 10, height: 10, borderRadius: '50%', background: preset.color, flexShrink: 0 }} />
             <div style={{ flex: 1, minWidth: 0 }}>
@@ -70,6 +128,9 @@ function PresetCard({ preset, index, total, onEdit, onDelete }) {
         </div>
       </div>
       {indicator === 'after' && <DropBar color={preset.color} />}
+      {showTip && (
+        <NameTooltip anchor={tipAnchor} name={preset.name || 'Untitled preset'} hint="Drag to schedule on a day" />
+      )}
     </div>
   );
 }

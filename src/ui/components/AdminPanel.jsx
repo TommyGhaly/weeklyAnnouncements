@@ -191,10 +191,82 @@ function HomilyBar({ onPrint, onSend, publishing, pdfBusy }) {
   );
 }
 
+// ── Resizable sidebar ─────────────────────────────────────────
+const SIDEBAR_KEY = 'wa_sidebar_width';
+const SIDEBAR_DEFAULT = 280;
+const SIDEBAR_MIN = 220;
+const SIDEBAR_MAX = 560;
+const clampSidebar = w => Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, Math.round(w)));
+
+function useSidebarWidth() {
+  const [width, setWidth] = useState(() => {
+    const saved = parseInt(localStorage.getItem(SIDEBAR_KEY) ?? '', 10);
+    return Number.isFinite(saved) ? clampSidebar(saved) : SIDEBAR_DEFAULT;
+  });
+  const [resizing, setResizing] = useState(false);
+
+  useEffect(() => { localStorage.setItem(SIDEBAR_KEY, String(width)); }, [width]);
+
+  const start = e => {
+    e.preventDefault();
+    const startX = e.touches?.[0]?.clientX ?? e.clientX;
+    const startW = width;
+    setResizing(true);
+    const prevCursor = document.body.style.cursor;
+    const prevSelect = document.body.style.userSelect;
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+
+    const move = ev => {
+      const x = ev.touches?.[0]?.clientX ?? ev.clientX;
+      setWidth(clampSidebar(startW + (x - startX)));
+    };
+    const end = () => {
+      window.removeEventListener('mousemove', move);
+      window.removeEventListener('mouseup', end);
+      window.removeEventListener('touchmove', move);
+      window.removeEventListener('touchend', end);
+      document.body.style.cursor = prevCursor;
+      document.body.style.userSelect = prevSelect;
+      setResizing(false);
+    };
+    window.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', end);
+    window.addEventListener('touchmove', move, { passive: false });
+    window.addEventListener('touchend', end);
+  };
+
+  return { width, resizing, start, reset: () => setWidth(SIDEBAR_DEFAULT) };
+}
+
+function SidebarResizer({ onStart, onReset, active }) {
+  const [hover, setHover] = useState(false);
+  return (
+    <div
+      onMouseDown={onStart}
+      onTouchStart={onStart}
+      onDoubleClick={onReset}
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      title="Drag to resize · double-click to reset"
+      style={{
+        width: 24, flexShrink: 0, alignSelf: 'stretch', cursor: 'col-resize',
+        display: 'flex', alignItems: 'center', justifyContent: 'center', touchAction: 'none',
+      }}>
+      <div style={{
+        width: active || hover ? 4 : 3, height: active || hover ? 64 : 40, borderRadius: 3,
+        background: active ? '#b8860b' : hover ? '#c9a96e' : '#e0cba8',
+        transition: 'all 0.15s ease',
+      }} />
+    </div>
+  );
+}
+
 // ── Main ──────────────────────────────────────────────────────
 export default function AdminPanel() {
   const { config } = useAppConfig();
   const isMobile = useIsMobile();
+  const sidebar = useSidebarWidth();
 
   const [sessions,            setSessions]            = useState([]);
   const [templates,           setTemplates]           = useState([]);
@@ -941,14 +1013,16 @@ export default function AdminPanel() {
         </div>
 
         {/* Body */}
-        <div style={{ flex: 1, display: 'flex', flexDirection: isMobile ? 'column' : 'row', overflow: isMobile ? 'visible' : 'hidden', maxWidth: 1400, width: '100%', margin: '0 auto', padding: isMobile ? '0 16px' : '0 32px', boxSizing: 'border-box', gap: isMobile ? 14 : 24 }}>
+        <div style={{ flex: 1, display: 'flex', flexDirection: isMobile ? 'column' : 'row', overflow: isMobile ? 'visible' : 'hidden', maxWidth: 1400, width: '100%', margin: '0 auto', padding: isMobile ? '0 16px' : '0 32px', boxSizing: 'border-box', gap: isMobile ? 14 : 0 }}>
 
           {/* Sidebar */}
-          <div style={{ width: isMobile ? '100%' : 280, flexShrink: 0, overflowY: isMobile ? 'visible' : 'auto', scrollbarWidth: 'thin', display: 'flex', flexDirection: 'column', gap: 14, padding: isMobile ? '14px 0 0' : '24px 0' }}>
+          <div style={{ width: isMobile ? '100%' : sidebar.width, flexShrink: 0, overflowY: isMobile ? 'visible' : 'auto', scrollbarWidth: 'thin', display: 'flex', flexDirection: 'column', gap: 14, padding: isMobile ? '14px 0 0' : '24px 0' }}>
             <Card><PresetLibrary presets={presets} onAdd={addPreset} onEdit={editPreset} onDelete={removePreset} onReorder={reorderPresets} /></Card>
             <Card><AnnouncementPresetLibrary presets={announcementPresets} onAdd={addAnnFromPreset} onEdit={editAnnPreset} onDelete={removeAnnPreset} onAddNew={addAnnPreset} /></Card>
             <Card style={{ border: `1.5px solid ${config.devMode ? '#22c55e55' : '#e8d9c0'}` }}><ConfigPanel /></Card>
           </div>
+
+          {!isMobile && <SidebarResizer onStart={sidebar.start} onReset={sidebar.reset} active={sidebar.resizing} />}
 
           {/* Content */}
           <div style={{ flex: 1, minWidth: 0, overflowY: isMobile ? 'visible' : 'auto', display: 'flex', flexDirection: 'column', gap: 18, padding: isMobile ? '0 0 24px' : '24px 0' }}>
