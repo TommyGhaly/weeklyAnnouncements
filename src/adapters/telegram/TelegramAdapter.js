@@ -5,6 +5,24 @@ import { CHURCH_NAME } from '../../core/domain/Bulletin';
 
 const DIV = '━━━━━━━━━━━━━━━';
 
+// A published bulletin is tracked as [{ id, kind }] so a re-publish can edit
+// each message in place instead of deleting and resending. Sessions published
+// before that stored a flat array of ids with the document first —
+// normalizeRecords upgrades those shapes on read.
+export function normalizeRecords(stored = []) {
+  return (stored ?? [])
+    .map((entry, i) =>
+      entry && typeof entry === 'object'
+        ? { id: entry.id, kind: entry.kind ?? 'text' }
+        : { id: entry, kind: i === 0 ? 'document' : 'text' }
+    )
+    .filter(r => r.id != null);
+}
+
+export function recordIds(stored = []) {
+  return normalizeRecords(stored).map(r => r.id);
+}
+
 export class TelegramAdapter extends NotificationPort {
   constructor(devMode = false) {
     super();
@@ -32,19 +50,61 @@ export class TelegramAdapter extends NotificationPort {
   // ─── PUBLISH ───────────────────────────────────────────────
 
   async publish(bulletin, pdfBlob, { includeAnnouncements = true } = {}) {
-    const ids = [];
-    const filteredBulletin = includeAnnouncements
-      ? bulletin
-      : { ...bulletin, announcements: [] };
-    const digest   = this.formatDigest(filteredBulletin);
-    const filename = `${bulletin.presetName ?? 'Weekly Bulletin'}.pdf`;
+    const records = [];
+    const digest   = this.formatDigest(this._filter(bulletin, includeAnnouncements));
+    const filename = this._bulletinFilename(bulletin);
 
     const docId = await this._sendDocument(pdfBlob, filename, '');
-    if (docId) ids.push(docId);
-    const mids = await this._sendLongMessage(digest);
-    ids.push(...mids);
+    if (docId) records.push({ id: docId, kind: 'document' });
+    for (const id of await this._sendLongMessage(digest)) {
+      records.push({ id, kind: 'text' });
+    }
 
-    return ids;
+    return records;
+  }
+
+  // Re-publish by editing the already-sent messages in place. Returns null when
+  // the new digest needs more text messages than are in the channel — the extra
+  // ones would land below whatever has been posted since, so the caller falls
+  // back to delete-and-resend rather than leaving the bulletin out of order.
+  async republish(bulletin, pdfBlob, stored, { includeAnnouncements = true } = {}) {
+    const prev  = normalizeRecords(stored);
+    const docs  = prev.filter(r => r.kind === 'document');
+    const texts = prev.filter(r => r.kind === 'text');
+    if (!docs.length) return null;
+
+    const chunks = this._chunkText(this.formatDigest(this._filter(bulletin, includeAnnouncements)));
+    if (chunks.length > texts.length) return null;
+
+    await this.editMessageDocument(docs[0].id, pdfBlob, this._bulletinFilename(bulletin));
+    for (let i = 0; i < chunks.length; i++) {
+      await this.editMessageText(texts[i].id, chunks[i]);
+    }
+
+    // Trim messages the shorter bulletin no longer fills. A failure here is the
+    // 48-hour delete window, not a publish failure — the edits already landed.
+    const stale = [...docs.slice(1), ...texts.slice(chunks.length)];
+    let removed = 0;
+    for (const r of stale) {
+      try { await this.deleteMessage(r.id); removed++; } catch { /* too old to delete */ }
+    }
+
+    return {
+      records: [
+        { id: docs[0].id, kind: 'document' },
+        ...chunks.map((_, i) => ({ id: texts[i].id, kind: 'text' })),
+      ],
+      edited: 1 + chunks.length,
+      removed,
+    };
+  }
+
+  _filter(bulletin, includeAnnouncements) {
+    return includeAnnouncements ? bulletin : { ...bulletin, announcements: [] };
+  }
+
+  _bulletinFilename(bulletin) {
+    return `${bulletin.presetName ?? 'Weekly Bulletin'}.pdf`;
   }
 
   async publishAnnouncements(bulletin) {
@@ -164,12 +224,11 @@ export class TelegramAdapter extends NotificationPort {
     return data.result?.message_id ?? null;
   }
 
-  async _sendLongMessage(text) {
+  // Split on line boundaries so re-publishing the same bulletin produces the
+  // same chunks, and an unchanged message edits to an identical body.
+  _chunkText(text) {
     const LIMIT = 4000;
-    if (text.length <= LIMIT) {
-      const id = await this._sendMessage(text);
-      return id ? [id] : [];
-    }
+    if (text.length <= LIMIT) return [text];
     const chunks = [];
     let current = '';
     for (const line of text.split('\n')) {
@@ -182,8 +241,12 @@ export class TelegramAdapter extends NotificationPort {
       }
     }
     if (current.trim()) chunks.push(current.trim());
+    return chunks;
+  }
+
+  async _sendLongMessage(text) {
     const ids = [];
-    for (const chunk of chunks) {
+    for (const chunk of this._chunkText(text)) {
       const id = await this._sendMessage(chunk);
       if (id) ids.push(id);
     }
@@ -192,18 +255,25 @@ export class TelegramAdapter extends NotificationPort {
 
   // ─── EDIT ──────────────────────────────────────────────────
 
+  // Editing a bulletin the bot sent has no 48-hour cutoff the way deleting
+  // does, so this path still works on messages too old to undo.
+  async _edit(method, form) {
+    const res  = await fetch(`${this.base}/${method}`, { method: 'POST', body: form });
+    const data = await res.json().catch(() => ({}));
+    if (res.ok) return { changed: true };
+    const desc = data.description || res.statusText;
+    // Telegram rejects a no-op edit; an unchanged bulletin is still a success.
+    if (/message is not modified/i.test(desc)) return { changed: false };
+    throw new Error(`Telegram ${method} error: ${desc}`);
+  }
+
   async editMessageText(messageId, newText) {
     const form = new FormData();
     form.append('chat_id',    this.chatId);
     form.append('message_id', messageId);
     form.append('text',       newText.slice(0, 4096));
     form.append('parse_mode', 'Markdown');
-    const res = await fetch(`${this.base}/editMessageText`, { method: 'POST', body: form });
-    if (!res.ok) {
-      const e = await res.json().catch(() => ({}));
-      throw new Error(`Telegram edit error: ${e.description || res.statusText}`);
-    }
-    return res.json();
+    return this._edit('editMessageText', form);
   }
 
   async editMessageCaption(messageId, newCaption) {
@@ -212,12 +282,23 @@ export class TelegramAdapter extends NotificationPort {
     form.append('message_id', messageId);
     form.append('caption',    newCaption.slice(0, 1024));
     form.append('parse_mode', 'Markdown');
-    const res = await fetch(`${this.base}/editMessageCaption`, { method: 'POST', body: form });
-    if (!res.ok) {
-      const e = await res.json().catch(() => ({}));
-      throw new Error(`Telegram edit caption error: ${e.description || res.statusText}`);
+    return this._edit('editMessageCaption', form);
+  }
+
+  // Swapping the attached PDF needs editMessageMedia — editMessageText cannot
+  // touch a document message, and a document cannot become a text message.
+  async editMessageDocument(messageId, pdfBlob, filename, caption = '') {
+    const media = { type: 'document', media: 'attach://file' };
+    if (caption) {
+      media.caption    = caption.slice(0, 1024);
+      media.parse_mode = 'Markdown';
     }
-    return res.json();
+    const form = new FormData();
+    form.append('chat_id',    this.chatId);
+    form.append('message_id', messageId);
+    form.append('media',      JSON.stringify(media));
+    form.append('file',       pdfBlob, filename);
+    return this._edit('editMessageMedia', form);
   }
 
   // ─── DELETE ────────────────────────────────────────────────
@@ -236,7 +317,7 @@ export class TelegramAdapter extends NotificationPort {
 
   async deleteMessages(messageIds) {
     const results = [];
-    for (const id of messageIds) {
+    for (const id of recordIds(messageIds)) {
       try {
         await this.deleteMessage(id);
         results.push({ id, deleted: true });

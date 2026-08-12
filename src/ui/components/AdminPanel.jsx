@@ -650,32 +650,52 @@ export default function AdminPanel() {
   const publish   = () => setPublishPrompt({ mode: 'publish',   oldIdsCount: 0 });
   const republish = () => setPublishPrompt({ mode: 'republish', oldIdsCount: (editing?.telegramMessageIds ?? []).length });
 
+  const savePublished = async (records, includeAnnouncements) => {
+    const updated = updateSession(editing, {
+      lastPublished: new Date().toISOString(),
+      telegramMessageIds: records,
+      telegramLastSent: new Date().toISOString(),
+      lastPublishIncludedAnnouncements: includeAnnouncements,
+    });
+    setEditing(updated); await repo.saveSession(updated); setSessions(await repo.listSessions());
+    setDirty(false);
+  };
+
   const runPublish = async (mode, includeAnnouncements) => {
     if (!editing || editingType !== 'session') return;
     setPublishPrompt(null);
     setPublishing(true);
     try {
+      // Build the PDF before touching the channel, so a failed export can't
+      // leave the old messages deleted with nothing to replace them.
+      setMsg('Generating PDF...', 'info');
+      const blob    = await exporter.export(editing, logoUrl);
+      const adapter = await TelegramAdapter.create();
+
       if (mode === 'republish') {
+        setMsg('Updating sent messages...', 'info');
+        const edit = await adapter.republish(editing, blob, editing.telegramMessageIds ?? [], { includeAnnouncements });
+        if (edit) {
+          await savePublished(edit.records, includeAnnouncements);
+          setMsg(
+            `Updated ${edit.edited} message${edit.edited !== 1 ? 's' : ''} in place` +
+            (edit.removed ? `, removed ${edit.removed}` : ''),
+            'success'
+          );
+          setPublishing(false);
+          return;
+        }
+        // Bulletin outgrew its existing messages — resend so it stays in order.
         const oldIds = editing.telegramMessageIds ?? [];
         if (oldIds.length) {
-          setMsg('Removing old messages...', 'info');
-          const adapter = await TelegramAdapter.create();
+          setMsg('Bulletin no longer fits — resending...', 'info');
           await adapter.deleteMessages(oldIds);
         }
       }
-      setMsg('Generating PDF...', 'info');
-      const blob = await exporter.export(editing, logoUrl);
+
       setMsg(mode === 'republish' ? 'Sending updated bulletin...' : 'Sending to Telegram...', 'info');
-      const adapter = await TelegramAdapter.create();
-      const messageIds = await adapter.publish(editing, blob, { includeAnnouncements });
-      const updated = updateSession(editing, {
-        lastPublished: new Date().toISOString(),
-        telegramMessageIds: messageIds,
-        telegramLastSent: new Date().toISOString(),
-        lastPublishIncludedAnnouncements: includeAnnouncements,
-      });
-      setEditing(updated); await repo.saveSession(updated); setSessions(await repo.listSessions());
-      setDirty(false);
+      const records = await adapter.publish(editing, blob, { includeAnnouncements });
+      await savePublished(records, includeAnnouncements);
       setMsg(
         mode === 'republish'
           ? (includeAnnouncements ? 'Re-published with announcements!' : 'Re-published (no announcements)')
@@ -885,7 +905,7 @@ export default function AdminPanel() {
                 <div style={{ color: 'rgba(255,255,255,0.4)', fontSize: 11, marginTop: 2 }}>
                   {publishPrompt.mode === 'republish'
                     ? (publishPrompt.oldIdsCount > 0
-                        ? `Will delete ${publishPrompt.oldIdsCount} previously sent message${publishPrompt.oldIdsCount > 1 ? 's' : ''}`
+                        ? `Will update ${publishPrompt.oldIdsCount} sent message${publishPrompt.oldIdsCount > 1 ? 's' : ''} in place`
                         : 'Send an updated bulletin')
                     : `${config.devMode ? 'TEST channel' : 'Live channel'}`}
                 </div>
