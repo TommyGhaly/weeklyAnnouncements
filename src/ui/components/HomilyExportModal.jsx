@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
 
 // ── Checkbox ──────────────────────────────────────────────────
-function Checkbox({ checked, onChange }) {
+// Presentational only — the surrounding row owns the click, so clicking the
+// box itself toggles once instead of firing here and again on the way up.
+function Checkbox({ checked }) {
   return (
     <div
-      onClick={onChange}
       style={{
         width: 17, height: 17, borderRadius: 4, flexShrink: 0,
         border: checked ? '2px solid #b8860b' : '2px solid #c9a96e',
@@ -53,7 +54,7 @@ function ItemRow({ checked, onToggle, children }) {
       }}
     >
       <div style={{ paddingTop: 1 }}>
-        <Checkbox checked={checked} onChange={onToggle} />
+        <Checkbox checked={checked} />
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>{children}</div>
     </div>

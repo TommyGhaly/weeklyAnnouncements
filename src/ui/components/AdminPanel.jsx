@@ -912,17 +912,24 @@ export default function AdminPanel() {
               </div>
               <div style={{ padding: '20px 28px' }}>
                 <div style={{ fontSize: 13, color: '#5c3d1e', marginBottom: 14, lineHeight: 1.6 }}>
-                  Include announcements in this post?
+                  {(editing.announcements ?? []).length > 0
+                    ? 'Include announcements in this post?'
+                    : publishPrompt.mode === 'republish'
+                      ? 'Send the updated bulletin to the channel?'
+                      : `Send the bulletin to the ${config.devMode ? 'TEST' : 'live'} channel?`}
                 </div>
-                {(editing.announcements ?? []).length === 0 && (
-                  <div style={{ fontSize: 11, color: '#b0956e', background: '#fdf6ec', padding: '8px 12px', borderRadius: 6, marginBottom: 12 }}>
-                    This bulletin has no announcements — both options will produce the same result.
-                  </div>
-                )}
                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, flexWrap: 'wrap' }}>
                   <button onClick={() => setPublishPrompt(null)} style={{ padding: '8px 18px', background: '#f4ece0', border: '1px solid #e0cba8', borderRadius: 8, fontSize: 13, color: '#5c3d1e', cursor: 'pointer' }}>Cancel</button>
-                  <button onClick={() => runPublish(publishPrompt.mode, false)} style={{ padding: '8px 18px', background: '#fff', border: '1.5px solid #5c3d1e', color: '#5c3d1e', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>Without announcements</button>
-                  <button onClick={() => runPublish(publishPrompt.mode, true)} style={{ padding: '8px 18px', background: 'linear-gradient(135deg, #b8860b, #d4a017)', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>With announcements</button>
+                  {(editing.announcements ?? []).length > 0 ? (
+                    <>
+                      <button onClick={() => runPublish(publishPrompt.mode, false)} style={{ padding: '8px 18px', background: '#fff', border: '1.5px solid #5c3d1e', color: '#5c3d1e', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>Without announcements</button>
+                      <button onClick={() => runPublish(publishPrompt.mode, true)} style={{ padding: '8px 18px', background: 'linear-gradient(135deg, #b8860b, #d4a017)', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>With announcements</button>
+                    </>
+                  ) : (
+                    <button onClick={() => runPublish(publishPrompt.mode, false)} style={{ padding: '8px 18px', background: 'linear-gradient(135deg, #b8860b, #d4a017)', color: '#fff', border: 'none', borderRadius: 8, fontSize: 13, fontWeight: 600, cursor: 'pointer' }}>
+                      {publishPrompt.mode === 'republish' ? 'Re-publish' : 'Publish'}
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
