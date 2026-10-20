@@ -988,7 +988,7 @@ export default function AdminPanel() {
                   const pickedDow = d.getDay();
                   setEditing(b => {
                     if (!b.days.length) return updateSession(b, { weekLabel: label });
-                    let anchorIdx = b.days.findIndex(day => ALL_DAYS.indexOf(day.day) === pickedDow);
+                    let anchorIdx = b.days.findLastIndex(day => ALL_DAYS.indexOf(day.day) === pickedDow);
                     if (anchorIdx === -1) anchorIdx = 0;
                     const anchorDow = ALL_DAYS.indexOf(b.days[anchorIdx].day);
                     let anchorOffset = anchorDow - pickedDow;

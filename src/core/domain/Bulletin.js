@@ -189,7 +189,8 @@ export function templateToSession(template, anchorDate) {
   const weekLabel  = anchor.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
 
   const templateDays = template.days ?? [];
-  let anchorIdx = templateDays.findIndex(d => ALL_DAYS.indexOf(d.day) === pickedDow);
+  // The picked date is the end of the schedule: match the last day with that weekday
+  let anchorIdx = templateDays.findLastIndex(d => ALL_DAYS.indexOf(d.day) === pickedDow);
   if (anchorIdx === -1) anchorIdx = 0;
 
   // Build days with dates; duration + events carry over via deepClone spread
@@ -225,11 +226,19 @@ export function templateToSession(template, anchorDate) {
   // from the template's offset-anchor day, not from whichever day was picked.
   const offsetDay = days[template.offsetAnchorIdx ?? 0];
   const anchorISO = offsetDay?.date ?? toISO(anchor);
+  // Keep events within the schedule's first and last day
+  const firstISO = days[0]?.date, lastISO = days.at(-1)?.date;
+  const clamp = iso => {
+    if (!iso || !firstISO) return iso;
+    if (iso < firstISO) return firstISO;
+    if (iso > lastISO)  return lastISO;
+    return iso;
+  };
   const multiDayEvents = (template.multiDayEvents ?? []).map(e => ({
     ...deepClone(e),                  // duration field carries over
     id:          crypto.randomUUID(),
-    startDate:   e.startOffset != null ? addDaysToDate(anchorISO, e.startOffset) : '',
-    endDate:     e.endOffset   != null ? addDaysToDate(anchorISO, e.endOffset)   : '',
+    startDate:   e.startOffset != null ? clamp(addDaysToDate(anchorISO, e.startOffset)) : '',
+    endDate:     e.endOffset   != null ? clamp(addDaysToDate(anchorISO, e.endOffset))   : '',
     startOffset: null,
     endOffset:   null,
   }));

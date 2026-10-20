@@ -126,7 +126,7 @@ export default function NewSessionWizard({ open, templates, onClose, onCreate })
           {step === 2 && (
             <div>
               <div style={{ fontSize: 13, color: '#5c3d1e', marginBottom: 16, lineHeight: 1.6 }}>
-                Pick the start date for this week. All day dates and multi-day events will be calculated automatically.
+                Pick the last day of this week's schedule. All day dates and multi-day events will be calculated automatically.
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
                 <span style={{ fontSize: 12, color: '#b0956e', fontWeight: 600 }}>Week of</span>
