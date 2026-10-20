@@ -141,10 +141,13 @@ export const updateBulletin = updateSession;
 
 /** Convert a session to a template (strip dates, compute offsets, carry timings) */
 export function sessionToTemplate(session, templateName) {
-  let anchorISO = null;
-  for (const day of session.days ?? []) {
-    if (day.date) { anchorISO = day.date; break; }
-  }
+  // Offsets are relative to the first dated day; remember which day that was
+  // so templateToSession can resolve them against the same day.
+  let anchorISO = null, offsetAnchorIdx = 0;
+  (session.days ?? []).some((day, i) => {
+    if (day.date) { anchorISO = day.date; offsetAnchorIdx = i; return true; }
+    return false;
+  });
 
   const multiDayEvents = (session.multiDayEvents ?? []).map(e => {
     let startOffset = null, endOffset = null;
@@ -169,6 +172,7 @@ export function sessionToTemplate(session, templateName) {
       events:   deepClone(d.events ?? []).map(e => ({ ...e, id: crypto.randomUUID() })),
     })),
     multiDayEvents,
+    offsetAnchorIdx,
     announcements: deepClone(session.announcements ?? []),  // _slideDuration on [0] carries naturally
     slideImages:   deepClone(session.slideImages ?? []),     // img.duration carries naturally
     images:        deepClone(session.images ?? []),
@@ -217,8 +221,10 @@ export function templateToSession(template, anchorDate) {
     days[i].date = toISO(d);
   }
 
-  // Resolve multi-day event offsets to concrete dates
-  const anchorISO    = toISO(anchor);
+  // Resolve multi-day event offsets to concrete dates. Offsets were computed
+  // from the template's offset-anchor day, not from whichever day was picked.
+  const offsetDay = days[template.offsetAnchorIdx ?? 0];
+  const anchorISO = offsetDay?.date ?? toISO(anchor);
   const multiDayEvents = (template.multiDayEvents ?? []).map(e => ({
     ...deepClone(e),                  // duration field carries over
     id:          crypto.randomUUID(),

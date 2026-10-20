@@ -1006,8 +1006,13 @@ export default function AdminPanel() {
                       const dayDate = new Date(anchorDate); dayDate.setDate(dayDate.getDate() + offset);
                       updatedDays.push({ ...day, date: toISO(dayDate) });
                     }
+                    // Shift multi-day events by however far the days moved
+                    const oldFirst = b.days[0].date, newFirst = updatedDays[0].date;
+                    const shift = oldFirst ? Math.round((new Date(newFirst + 'T00:00:00') - new Date(oldFirst + 'T00:00:00')) / 86400000) : 0;
+                    const shiftISO = iso => { if (!iso) return iso; const x = new Date(iso + 'T00:00:00'); x.setDate(x.getDate() + shift); return toISO(x); };
+                    const multiDayEvents = shift ? (b.multiDayEvents ?? []).map(e => ({ ...e, startDate: shiftISO(e.startDate), endDate: shiftISO(e.endDate) })) : b.multiDayEvents;
                     setDirty(true);
-                    return updateSession(b, { weekLabel: label, days: updatedDays });
+                    return updateSession(b, { weekLabel: label, days: updatedDays, multiDayEvents });
                   });
                 }}
                 style={{ fontSize: 10, padding: '2px 4px', border: '1.5px solid #e0cba8', borderRadius: 5, background: '#fdf6ec', color: '#5c3d1e', outline: 'none', flexShrink: 0, width: 112 }} />
