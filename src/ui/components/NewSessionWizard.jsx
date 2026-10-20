@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { templateToSession, createSession } from '../../core/domain/Bulletin';
+import { templateToSession, createSession, resolveTemplateEventDays } from '../../core/domain/Bulletin';
 
 export default function NewSessionWizard({ open, templates, onClose, onCreate }) {
   const [step, setStep] = useState(1); // 1=pick template, 2=pick date
@@ -142,17 +142,20 @@ export default function NewSessionWizard({ open, templates, onClose, onCreate })
               {selectedTemplate && (selectedTemplate.multiDayEvents ?? []).length > 0 && (
                 <div style={{ background: '#f5eefb', border: '1px solid #e0d0f0', borderRadius: 8, padding: '10px 14px', marginBottom: 16 }}>
                   <div style={{ fontSize: 10, fontWeight: 700, color: '#6d3b8e', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6 }}>Multi-day events will auto-shift</div>
-                  {selectedTemplate.multiDayEvents.map((e, i) => (
-                    <div key={i} style={{ fontSize: 12, color: '#5c3d1e', marginBottom: 2 }}>
-                      {e.name}
-                      {e.startOffset != null && (
-                        <span style={{ color: '#6d3b8e', marginLeft: 6 }}>
-                          (day {e.startOffset >= 0 ? '+' : ''}{e.startOffset}
-                          {e.endOffset != null ? ` → ${e.endOffset >= 0 ? '+' : ''}${e.endOffset}` : ''})
-                        </span>
-                      )}
-                    </div>
-                  ))}
+                  {selectedTemplate.multiDayEvents.map((e, i) => {
+                    const { startIdx, endIdx } = resolveTemplateEventDays(selectedTemplate, e);
+                    const dayName = idx => selectedTemplate.days[idx]?.day;
+                    return (
+                      <div key={i} style={{ fontSize: 12, color: '#5c3d1e', marginBottom: 2 }}>
+                        {e.name}
+                        {startIdx != null && (
+                          <span style={{ color: '#6d3b8e', marginLeft: 6 }}>
+                            ({dayName(startIdx)}{endIdx != null && endIdx !== startIdx ? ` → ${dayName(endIdx)}` : ''})
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
 

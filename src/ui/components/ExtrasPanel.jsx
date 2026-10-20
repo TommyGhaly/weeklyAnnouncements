@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { collection, doc, setDoc, getDocs, deleteDoc } from 'firebase/firestore';
-import { createAnnouncement, createMultiDayEvent } from '../../core/domain/Bulletin';
+import { createAnnouncement, createMultiDayEvent, dayRef, parseDayRef, resolveTemplateEventDays } from '../../core/domain/Bulletin';
 import { TimePicker, DatePicker } from './DrumPicker';
 import ImagePicker from './ImagePicker';
 import DurationChip from './DurationChip';
@@ -20,8 +20,10 @@ function createMDPreset(opts = {}) {
   return { id: crypto.randomUUID(), name: opts.name ?? '', color: opts.color ?? '#b8860b', time: opts.time ?? '', timeTo: opts.timeTo ?? '', notes: opts.notes ?? '', image: opts.image ?? '', contacts: opts.contacts ?? [] };
 }
 
-function fmtDate(val) {
+function fmtDate(val, days = []) {
   if (!val) return '';
+  const idx = parseDayRef(val);
+  if (idx != null) return days[idx]?.day ?? '';
   const d = new Date(val + 'T00:00:00');
   if (isNaN(d)) return val;
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
@@ -70,13 +72,25 @@ function MDPresetForm({ initial, onSave, onCancel }) {
 }
 
 function MultiDayEventForm({ initial, presets, days, onSave, onCancel }) {
-  const [form, setForm] = useState(initial ?? createMultiDayEvent());
+  const [form, setForm] = useState(() => {
+    const e = initial ?? createMultiDayEvent();
+    if (!initial || days.some(d => d.date)) return e;
+    // Template: convert older day-name / day-count values to day positions
+    const { startIdx, endIdx } = resolveTemplateEventDays({ days }, e);
+    return {
+      ...e,
+      startDate: startIdx != null ? dayRef(startIdx) : '',
+      endDate:   endIdx   != null ? dayRef(endIdx)   : '',
+      startOffset: null, endOffset: null,
+    };
+  });
   const upd = (k, v) => setForm(f => ({ ...f, [k]: v }));
   const addContact = () => upd('contacts', [...(form.contacts ?? []), { name: '', phone: '' }]);
   const updContact = (i, k, v) => { const c = [...(form.contacts ?? [])]; c[i] = { ...c[i], [k]: v }; upd('contacts', c); };
   const remContact = i => upd('contacts', (form.contacts ?? []).filter((_, j) => j !== i));
   const loadPreset = p => setForm(f => ({ ...f, name: p.name, color: p.color, time: p.time, timeTo: p.timeTo, notes: p.notes, image: p.image, contacts: [...(p.contacts ?? [])] }));
-  const dayOptions = days.map(d => ({ value: d.date || d.day, label: `${d.day}${d.date ? ` (${fmtDate(d.date)})` : ''}` }));
+  // Templates have no dates, so they point at days by position (handles repeated weekdays)
+  const dayOptions = days.map((d, i) => ({ value: d.date || dayRef(i), label: `${d.day}${d.date ? ` (${fmtDate(d.date)})` : ` (day ${i + 1})`}` }));
 
   return (
     <div style={{ background: '#fffbf0', border: '1.5px solid #e0cba8', borderRadius: 10, padding: 14, marginBottom: 10 }}>
@@ -186,7 +200,7 @@ function MultiDaySection({ events, days, onChange }) {
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontSize: 13, fontWeight: 600, color: '#3d2408' }}>{e.name}</div>
                 <div style={{ fontSize: 11, color: '#b0956e', marginTop: 2 }}>
-                  {fmtDate(e.startDate)}{e.endDate && e.endDate !== e.startDate ? ` → ${fmtDate(e.endDate)}` : ''}
+                  {fmtDate(e.startDate, days)}{e.endDate && e.endDate !== e.startDate ? ` → ${fmtDate(e.endDate, days)}` : ''}
                   {e.time ? ` · ${e.time}${e.timeTo ? ` → ${e.timeTo}` : ''}` : ''}
                 </div>
                 {(e.contacts ?? []).length > 0 && <div style={{ fontSize: 11, color: '#7a6352', marginTop: 2 }}>{e.contacts.map(c => c.name).filter(Boolean).join(' · ')}</div>}

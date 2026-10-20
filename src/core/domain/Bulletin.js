@@ -16,12 +16,6 @@ export function toISO(date) {
   return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`;
 }
 
-function addDaysToDate(iso, n) {
-  const d = new Date(iso + 'T00:00:00');
-  d.setDate(d.getDate() + n);
-  return toISO(d);
-}
-
 export function getDatesForWeek(startDate = new Date()) {
   const monday = getMondayOfWeek(startDate);
   return DAYS.map((day, i) => {
@@ -139,24 +133,65 @@ export const updateBulletin = updateSession;
 
 // ── Template ↔ Session conversion ─────────────────────────────
 
-/** Convert a session to a template (strip dates, compute offsets, carry timings) */
+// Multi-day events in a template point at days of the schedule by index
+// ("day:3"), so they always land on those days whatever date is picked.
+export const dayRef = i => `day:${i}`;
+export function parseDayRef(v) {
+  const m = /^day:(\d+)$/.exec(v ?? '');
+  return m ? Number(m[1]) : null;
+}
+
+/** Resolve a template multi-day event to { startIdx, endIdx } into template.days */
+export function resolveTemplateEventDays(template, e) {
+  const days = template.days ?? [];
+  if (!days.length) return { startIdx: null, endIdx: null };
+
+  // Legacy: day names picked in the template editor
+  const byName = (name, from) => {
+    if (!ALL_DAYS.includes(name)) return null;
+    let i = days.findIndex((d, j) => j >= from && d.day === name);
+    if (i === -1) i = days.findIndex(d => d.day === name);
+    return i === -1 ? null : i;
+  };
+  // Legacy: day-count offsets from the template's first day
+  const rel = [0];
+  for (let i = 1; i < days.length; i++) {
+    let diff = ALL_DAYS.indexOf(days[i].day) - ALL_DAYS.indexOf(days[i - 1].day);
+    if (diff <= 0) diff += 7;
+    rel.push(rel[i - 1] + diff);
+  }
+  const byOffset = off => {
+    if (off == null) return null;
+    const i = rel.findIndex(r => r >= rel[template.offsetAnchorIdx ?? 0] + off);
+    return i === -1 ? days.length - 1 : i;
+  };
+
+  const startIdx = parseDayRef(e.startDate) ?? byName(e.startDate, 0) ?? byOffset(e.startOffset);
+  let endIdx     = parseDayRef(e.endDate)   ?? byName(e.endDate, startIdx ?? 0) ?? byOffset(e.endOffset);
+  const clampIdx = i => i == null ? null : Math.min(Math.max(i, 0), days.length - 1);
+  if (startIdx != null && endIdx != null && endIdx < startIdx) endIdx = startIdx;
+  return { startIdx: clampIdx(startIdx), endIdx: clampIdx(endIdx) };
+}
+
+/** Convert a session to a template (strip dates, point events at days, carry timings) */
 export function sessionToTemplate(session, templateName) {
-  // Offsets are relative to the first dated day; remember which day that was
-  // so templateToSession can resolve them against the same day.
-  let anchorISO = null, offsetAnchorIdx = 0;
-  (session.days ?? []).some((day, i) => {
-    if (day.date) { anchorISO = day.date; offsetAnchorIdx = i; return true; }
-    return false;
-  });
+  const days = session.days ?? [];
+  // Index of the day matching an ISO date, or the nearest day inside the schedule
+  const dayIdxFor = iso => {
+    if (!iso || !days.length) return null;
+    const exact = days.findIndex(d => d.date === iso);
+    if (exact !== -1) return exact;
+    const after = days.findIndex(d => d.date && d.date > iso);
+    return after === -1 ? days.length - 1 : after;
+  };
 
   const multiDayEvents = (session.multiDayEvents ?? []).map(e => {
-    let startOffset = null, endOffset = null;
-    if (anchorISO && e.startDate) startOffset = daysBetween(anchorISO, e.startDate);
-    if (anchorISO && e.endDate)   endOffset   = daysBetween(anchorISO, e.endDate);
+    const startIdx = dayIdxFor(e.startDate), endIdx = dayIdxFor(e.endDate);
     return {
       ...e,                         // duration field carries over naturally
-      startDate: '', endDate: '',
-      startOffset, endOffset,
+      startDate: startIdx != null ? dayRef(startIdx) : '',
+      endDate:   endIdx   != null ? dayRef(endIdx)   : '',
+      startOffset: null, endOffset: null,
       id: crypto.randomUUID(),
     };
   });
@@ -172,7 +207,6 @@ export function sessionToTemplate(session, templateName) {
       events:   deepClone(d.events ?? []).map(e => ({ ...e, id: crypto.randomUUID() })),
     })),
     multiDayEvents,
-    offsetAnchorIdx,
     announcements: deepClone(session.announcements ?? []),  // _slideDuration on [0] carries naturally
     slideImages:   deepClone(session.slideImages ?? []),     // img.duration carries naturally
     images:        deepClone(session.images ?? []),
@@ -222,26 +256,18 @@ export function templateToSession(template, anchorDate) {
     days[i].date = toISO(d);
   }
 
-  // Resolve multi-day event offsets to concrete dates. Offsets were computed
-  // from the template's offset-anchor day, not from whichever day was picked.
-  const offsetDay = days[template.offsetAnchorIdx ?? 0];
-  const anchorISO = offsetDay?.date ?? toISO(anchor);
-  // Keep events within the schedule's first and last day
-  const firstISO = days[0]?.date, lastISO = days.at(-1)?.date;
-  const clamp = iso => {
-    if (!iso || !firstISO) return iso;
-    if (iso < firstISO) return firstISO;
-    if (iso > lastISO)  return lastISO;
-    return iso;
-  };
-  const multiDayEvents = (template.multiDayEvents ?? []).map(e => ({
-    ...deepClone(e),                  // duration field carries over
-    id:          crypto.randomUUID(),
-    startDate:   e.startOffset != null ? clamp(addDaysToDate(anchorISO, e.startOffset)) : '',
-    endDate:     e.endOffset   != null ? clamp(addDaysToDate(anchorISO, e.endOffset))   : '',
-    startOffset: null,
-    endOffset:   null,
-  }));
+  // Resolve multi-day events to the dates of the days they point at
+  const multiDayEvents = (template.multiDayEvents ?? []).map(e => {
+    const { startIdx, endIdx } = resolveTemplateEventDays(template, e);
+    return {
+      ...deepClone(e),                // duration field carries over
+      id:          crypto.randomUUID(),
+      startDate:   startIdx != null ? days[startIdx].date : '',
+      endDate:     endIdx   != null ? days[endIdx].date   : '',
+      startOffset: null,
+      endOffset:   null,
+    };
+  });
 
   return {
     id: crypto.randomUUID(),
@@ -264,12 +290,6 @@ export function templateToSession(template, anchorDate) {
 }
 
 // ── Helpers ───────────────────────────────────────────────────
-
-function daysBetween(iso1, iso2) {
-  const d1 = new Date(iso1 + 'T00:00:00');
-  const d2 = new Date(iso2 + 'T00:00:00');
-  return Math.round((d2 - d1) / 86400000);
-}
 
 function deepClone(obj) {
   return JSON.parse(JSON.stringify(obj));
