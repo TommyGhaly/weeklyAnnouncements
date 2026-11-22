@@ -247,14 +247,16 @@ export function ImageLibraryModal({ value, onSelect, onClose, title = 'Image Lib
                       key={img.fullPath}
                       onClick={() => select(img.url)}
                       style={{
-                        position: 'relative', cursor: onSelect ? 'pointer' : 'default', borderRadius: 8, overflow: 'hidden',
+                        // No overflow:hidden here — it would clip the Move menu. Corners are rounded on the img/caption instead.
+                        position: 'relative', cursor: onSelect ? 'pointer' : 'default', borderRadius: 8,
+                        zIndex: movingImage === img.fullPath ? 3 : 'auto',
                         border: `2.5px solid ${value === img.url ? '#b8860b' : 'transparent'}`,
                         boxShadow: value === img.url ? '0 0 0 2px #b8860b44' : '0 1px 4px rgba(0,0,0,0.1)',
                         transition: 'border-color 0.15s',
                         opacity: deleting === img.fullPath ? 0.4 : 1,
                       }}
                     >
-                      <img src={img.url} alt={img.name} style={{ width: '100%', height: 100, objectFit: 'cover', display: 'block' }} />
+                      <img src={img.url} alt={img.name} style={{ width: '100%', height: 100, objectFit: 'cover', display: 'block', borderRadius: '6px 6px 0 0' }} />
                       {value === img.url && (
                         <div style={{ position: 'absolute', top: 6, left: 6, width: 20, height: 20, borderRadius: '50%', background: '#b8860b', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, color: '#fff' }}>✓</div>
                       )}
@@ -277,7 +279,6 @@ export function ImageLibraryModal({ value, onSelect, onClose, title = 'Image Lib
                           position: 'absolute', top: 30, left: 4, right: 4, zIndex: 2,
                           background: '#fff', borderRadius: 8, border: '1px solid #e0cba8',
                           boxShadow: '0 6px 18px rgba(0,0,0,0.18)', padding: 4,
-                          maxHeight: 130, overflowY: 'auto',
                         }}>
                           <div style={{ fontSize: 9, fontWeight: 700, color: '#b0956e', textTransform: 'uppercase', letterSpacing: 1, padding: '3px 6px' }}>Move to</div>
                           {orderedFolders.map(f => (
@@ -291,7 +292,7 @@ export function ImageLibraryModal({ value, onSelect, onClose, title = 'Image Lib
                           ))}
                         </div>
                       )}
-                      <div style={{ padding: '4px 6px', fontSize: 10, color: '#7a5230', background: '#fdf6ec', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      <div style={{ padding: '4px 6px', fontSize: 10, color: '#7a5230', background: '#fdf6ec', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', borderRadius: '0 0 6px 6px' }}>
                         <span style={{ color: '#b0956e' }}>{img.folder ? `${img.folder}/` : ''}</span>{img.name}
                       </div>
                     </div>
