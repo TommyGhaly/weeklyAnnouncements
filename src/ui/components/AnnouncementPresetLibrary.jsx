@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { createAnnouncementPreset } from '../../core/domain/Bulletin';
 import ImagePicker from './ImagePicker';
+import CopyAnnouncementsPanel from './CopyAnnouncementsPanel';
 
 const field = { padding: '7px 10px', fontSize: 13, border: '1.5px solid #e0cba8', borderRadius: 7, background: '#fff', color: '#3d2408', width: '100%', outline: 'none', fontFamily: 'Inter, sans-serif' };
 
@@ -51,13 +52,29 @@ function PresetCard({ preset, onAdd, onEdit, onDelete }) {
   );
 }
 
-export default function AnnouncementPresetLibrary({ presets, onAdd, onEdit, onDelete, onAddNew }) {
+export default function AnnouncementPresetLibrary({ presets, onAdd, onEdit, onDelete, onAddNew, sourceSessions = [], onImport }) {
+  const [importing, setImporting] = useState(false);
   return (
     <div>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
         <div style={{ fontSize: 10, fontWeight: 700, color: '#b0956e', textTransform: 'uppercase', letterSpacing: 1 }}>Announcement Presets</div>
-        <button onClick={onAddNew} style={{ padding: '3px 10px', background: 'none', border: '1.5px dashed #c9a96e', borderRadius: 6, color: '#7a5230', fontSize: 10, cursor: 'pointer', fontWeight: 600 }}>+ New</button>
+        <div style={{ display: 'flex', gap: 6 }}>
+          {onImport && sourceSessions.length > 0 && !importing && (
+            <button onClick={() => setImporting(true)} title="Save announcements from sessions as presets" style={{ padding: '3px 10px', background: 'none', border: '1.5px dashed #c9a96e', borderRadius: 6, color: '#7a5230', fontSize: 10, cursor: 'pointer', fontWeight: 600 }}>⧉ From session</button>
+          )}
+          <button onClick={onAddNew} style={{ padding: '3px 10px', background: 'none', border: '1.5px dashed #c9a96e', borderRadius: 6, color: '#7a5230', fontSize: 10, cursor: 'pointer', fontWeight: 600 }}>+ New</button>
+        </div>
       </div>
+      {importing && (
+        <CopyAnnouncementsPanel
+          sessions={sourceSessions}
+          existing={presets}
+          title="Save session announcements as presets"
+          copyVerb="Save"
+          onCopy={picked => { onImport(picked); setImporting(false); }}
+          onCancel={() => setImporting(false)}
+        />
+      )}
       {presets.length === 0 && (
         <div style={{ fontSize: 11, color: '#c4a882', padding: '6px 0' }}>No announcement presets yet.</div>
       )}

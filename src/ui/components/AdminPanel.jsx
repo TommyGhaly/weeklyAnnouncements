@@ -428,6 +428,7 @@ export default function AdminPanel() {
   const reorderPresets = async r => { setPresets(r); await savePresetOrder(r); };
 
   const addAnnPreset    = ()  => setAnnouncementPresets(ps => [...ps, createAnnouncementPreset()]);
+  const importAnnPresets = anns => setAnnouncementPresets(ps => [...ps, ...anns.map(a => createAnnouncementPreset(a.text, a.image ?? ''))]);
   const editAnnPreset   = u   => setAnnouncementPresets(ps => ps.map(p => p.id === u.id ? u : p));
   const removeAnnPreset = id  => { showConfirm({ title: 'Delete announcement preset?', message: 'Permanently remove?', confirmLabel: 'Delete', onConfirm: () => { closeConfirm(); setAnnouncementPresets(ps => ps.filter(p => p.id !== id)); } }); };
   const addAnnFromPreset = preset => { if (!editing) return; updateEditing({ announcements: [...(editing.announcements ?? []), createAnnouncement(preset.text, preset.image)] }); };
@@ -1086,7 +1087,12 @@ export default function AdminPanel() {
           {/* Sidebar */}
           <div style={{ width: isMobile ? '100%' : sidebar.width, flexShrink: 0, overflowY: isMobile ? 'visible' : 'auto', scrollbarWidth: 'thin', display: 'flex', flexDirection: 'column', gap: 14, padding: isMobile ? '14px 0 0' : '24px 0' }}>
             <Card><PresetLibrary presets={presets} onAdd={addPreset} onEdit={editPreset} onDelete={removePreset} onReorder={reorderPresets} /></Card>
-            <Card><AnnouncementPresetLibrary presets={announcementPresets} onAdd={addAnnFromPreset} onEdit={editAnnPreset} onDelete={removeAnnPreset} onAddNew={addAnnPreset} /></Card>
+            <Card><AnnouncementPresetLibrary presets={announcementPresets} onAdd={addAnnFromPreset} onEdit={editAnnPreset} onDelete={removeAnnPreset} onAddNew={addAnnPreset}
+              onImport={importAnnPresets}
+              sourceSessions={[
+                ...(editingType === 'session' && editing ? [{ ...editing, label: `This session · ${editing.presetName ?? 'Untitled'}` }] : []),
+                ...sessions.filter(s => s.id !== editing?.id),
+              ]} /></Card>
             <Card style={{ border: `1.5px solid ${config.devMode ? '#22c55e55' : '#e8d9c0'}` }}><ConfigPanel /></Card>
           </div>
 
