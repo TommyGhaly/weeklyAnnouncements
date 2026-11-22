@@ -70,12 +70,49 @@ function Column({ items, value, onChange, width = 56, label }) {
 
   useEffect(() => { scrollTo(idx); }, []);
 
+  // Index the wheel is stepping toward; settle() snaps here instead of to
+  // wherever a smooth scroll happened to be mid-animation.
+  const wheelTarget = useRef(null);
+
   const settle = useCallback(() => {
     if (!ref.current) return;
-    const i = Math.round(ref.current.scrollTop / H);
+    const i = wheelTarget.current ?? Math.round(ref.current.scrollTop / H);
+    wheelTarget.current = null;
     const c = Math.max(0, Math.min(items.length - 1, i));
     scrollTo(c, true);
     onChange(items[c]);
+  }, [items, onChange, scrollTo]);
+
+  // Wheel / trackpad: step one item per WHEEL_STEP px of accumulated delta,
+  // so sensitive or free-spinning wheels don't fling past several values.
+  const idxRef = useRef(idx);
+  useEffect(() => { idxRef.current = idx; }, [idx]);
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const WHEEL_STEP = 60;   // px of wheel delta per item
+    const IDLE_RESET = 250;  // ms of quiet before leftover delta is discarded
+    let acc = 0;
+    let last = 0;
+    const onWheel = e => {
+      e.preventDefault();
+      const now = performance.now();
+      if (now - last > IDLE_RESET) acc = 0;
+      last = now;
+      const dy = e.deltaMode === 1 ? e.deltaY * 20 : e.deltaMode === 2 ? e.deltaY * H * VISIBLE : e.deltaY;
+      acc += dy;
+      if (Math.abs(acc) < WHEEL_STEP) return;
+      const dir = Math.sign(acc);
+      acc = 0; // at most one step per event, regardless of delta size
+      const base = wheelTarget.current ?? idxRef.current;
+      const next = Math.max(0, Math.min(items.length - 1, base + dir));
+      if (next === base) return;
+      wheelTarget.current = next;
+      scrollTo(next, true);
+      onChange(items[next]);
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
   }, [items, onChange, scrollTo]);
 
   useEffect(() => {
