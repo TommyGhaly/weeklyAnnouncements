@@ -19,6 +19,7 @@ import SlideTimingsPanel from './SlideTimingsPanel';
 import WeeklyView from './WeeklyView';
 import ExtrasPanel from './ExtrasPanel';
 import ImagePicker from './ImagePicker';
+import PhotoGallery from './PhotoGallery';
 import ConfirmModal from './ConfirmModal';
 import NewSessionWizard from './NewSessionWizard';
 import SaveTemplateModal from './SaveTemplateModal';
@@ -1093,6 +1094,7 @@ export default function AdminPanel() {
                 ...(editingType === 'session' && editing ? [{ ...editing, label: `This session · ${editing.presetName ?? 'Untitled'}` }] : []),
                 ...sessions.filter(s => s.id !== editing?.id),
               ]} /></Card>
+            <Card><PhotoGallery /></Card>
             <Card style={{ border: `1.5px solid ${config.devMode ? '#22c55e55' : '#e8d9c0'}` }}><ConfigPanel /></Card>
           </div>
 
