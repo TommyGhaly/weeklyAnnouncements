@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useRef, useLayoutEffect } from 'react';
 import { pdf } from '@react-pdf/renderer';
 import { FirebaseBulletinRepo } from '../../adapters/firebase/FirebaseBulletinRepo';
 import { ReactPDFExporter } from '../../adapters/export/ReactPDFExporter.jsx';
@@ -52,6 +52,38 @@ function timeAgo(iso) {
 }
 
 // ── Summary card ──────────────────────────────────────────────
+// Shows the first `visible` children, then scrolls. Height is measured from the
+// real cards (they vary in height), so the cut-off lands exactly after the Nth one.
+function ScrollList({ visible = 3, children }) {
+  const ref = useRef(null);
+  const [maxHeight, setMaxHeight] = useState(null);
+
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const measure = () => {
+      const kids = el.children;
+      if (kids.length <= visible) { setMaxHeight(null); return; }
+      const nth = kids[visible - 1];
+      setMaxHeight(nth.offsetTop + nth.offsetHeight - el.offsetTop + 8);
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [visible, children]);
+
+  return (
+    <div ref={ref} style={{
+      maxHeight: maxHeight ?? 'none',
+      overflowY: maxHeight ? 'auto' : 'visible',
+      paddingRight: maxHeight ? 4 : 0,
+    }}>
+      {children}
+    </div>
+  );
+}
+
 function SummaryCard({ item, isActive, isTemplate, onEdit, onPresent, onDelete, onEndSession }) {
   const dayCount   = (item.days ?? []).filter(d => d.events?.length > 0).length;
   const eventCount = (item.days ?? []).reduce((s, d) => s + (d.events?.length ?? 0), 0);
@@ -850,18 +882,22 @@ export default function AdminPanel() {
           <div>
             <SectionTitle>Sessions ({sessions.length})</SectionTitle>
             {sessions.length === 0 && <EmptyMsg>No sessions yet.</EmptyMsg>}
-            {sessions.map(s => (
-              <SummaryCard key={s.id} item={s} isActive={activeBulletinId === s.id}
-                onEdit={() => openEditor(s, 'session')} onPresent={() => setAsPresentation(s.id)}
-                onDelete={() => deleteItem(s, 'session')} onEndSession={() => handleEndSession(s)} />
-            ))}
+            <ScrollList visible={3}>
+              {sessions.map(s => (
+                <SummaryCard key={s.id} item={s} isActive={activeBulletinId === s.id}
+                  onEdit={() => openEditor(s, 'session')} onPresent={() => setAsPresentation(s.id)}
+                  onDelete={() => deleteItem(s, 'session')} onEndSession={() => handleEndSession(s)} />
+              ))}
+            </ScrollList>
           </div>
           <div>
             <SectionTitle>Templates ({templates.length})</SectionTitle>
             {templates.length === 0 && <EmptyMsg>No templates yet.</EmptyMsg>}
-            {templates.map(t => (
-              <SummaryCard key={t.id} item={t} isTemplate onEdit={() => openEditor(t, 'template')} onDelete={() => deleteItem(t, 'template')} />
-            ))}
+            <ScrollList visible={3}>
+              {templates.map(t => (
+                <SummaryCard key={t.id} item={t} isTemplate onEdit={() => openEditor(t, 'template')} onDelete={() => deleteItem(t, 'template')} />
+              ))}
+            </ScrollList>
           </div>
           <div style={{ gridColumn: '1 / -1' }}>
             <Card style={{ border: `1.5px solid ${config.devMode ? '#22c55e55' : '#e8d9c0'}` }}>
