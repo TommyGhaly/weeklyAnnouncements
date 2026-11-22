@@ -1134,7 +1134,7 @@ export default function AdminPanel() {
             </Card>
 
             <Card>
-              <ExtrasPanel bulletin={editing} onChange={updateEditingDirect} />
+              <ExtrasPanel bulletin={editing} onChange={updateEditingDirect} otherSessions={sessions.filter(s => s.id !== editing.id)} />
             </Card>
 
             <Card>
