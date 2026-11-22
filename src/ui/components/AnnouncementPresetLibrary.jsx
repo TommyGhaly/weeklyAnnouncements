@@ -3,6 +3,9 @@ import { createAnnouncementPreset } from '../../core/domain/Bulletin';
 import ImagePicker from './ImagePicker';
 import CopyAnnouncementsPanel from './CopyAnnouncementsPanel';
 
+// Long announcements are truncated to 3 lines so one preset can't dominate the sidebar.
+const clamp3 = { display: '-webkit-box', WebkitLineClamp: 3, WebkitBoxOrient: 'vertical', overflow: 'hidden' };
+const iconBtn = { background: 'none', border: 'none', fontSize: 11, cursor: 'pointer', flexShrink: 0, padding: '0 2px' };
 const field = { padding: '7px 10px', fontSize: 13, border: '1.5px solid #e0cba8', borderRadius: 7, background: '#fff', color: '#3d2408', width: '100%', outline: 'none', fontFamily: 'Inter, sans-serif' };
 
 function PresetCard({ preset, onAdd, onEdit, onDelete }) {
@@ -21,23 +24,25 @@ function PresetCard({ preset, onAdd, onEdit, onDelete }) {
       padding: '10px 12px', marginBottom: 8,
     }}>
       {!editing ? (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
           {preset.image && (
             <img src={preset.image} alt="" style={{ width: 28, height: 28, borderRadius: 4, objectFit: 'cover', flexShrink: 0 }} />
           )}
           <div
             onClick={() => onAdd(preset)}
-            style={{ flex: 1, fontSize: 12, color: '#3d2408', cursor: 'pointer', lineHeight: 1.4 }}
+            // minWidth 0 lets this flex item shrink below its longest word/URL; without it, long
+            // text widens the row and pushes the edit/delete buttons past the sidebar's clipped edge.
+            style={{ flex: 1, minWidth: 0, fontSize: 12, color: '#3d2408', cursor: 'pointer', lineHeight: 1.4, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', ...clamp3 }}
             title="Click to add to announcements"
           >
             {preset.text || <span style={{ color: '#c4a882', fontStyle: 'italic' }}>Empty preset</span>}
           </div>
-          <button onClick={() => setEditing(true)} style={{ background: 'none', border: 'none', color: '#b0956e', fontSize: 11, cursor: 'pointer' }}>✏️</button>
-          <button onClick={() => onDelete(preset.id)} style={{ background: 'none', border: 'none', color: '#c0392b', fontSize: 11, cursor: 'pointer' }}>✕</button>
+          <button onClick={() => setEditing(true)} title="Edit" style={{ ...iconBtn, color: '#b0956e' }}>✏️</button>
+          <button onClick={() => onDelete(preset.id)} title="Delete" style={{ ...iconBtn, color: '#c0392b' }}>✕</button>
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-          <textarea value={text} onChange={e => setText(e.target.value)} rows={2} style={{ ...field, resize: 'vertical' }} placeholder="Announcement text..." />
+          <textarea value={text} onChange={e => setText(e.target.value)} rows={Math.min(8, Math.max(2, text.split('\n').length + 1))} style={{ ...field, resize: 'vertical' }} placeholder="Announcement text..." />
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <span style={{ fontSize: 10, color: '#b0956e', fontWeight: 700 }}>Image</span>
             <ImagePicker value={image} onChange={setImage} />
