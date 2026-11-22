@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { listImages, deleteImage } from '../../adapters/firebase/StorageGallery';
 import { uploadImage, IMAGE_FOLDERS } from '../../adapters/firebase/StorageUpload';
+import { useAppConfig } from '../../hooks/useAppConfig';
 
 export default function ImagePicker({ value, onChange }) {
   const [open, setOpen] = useState(false);
@@ -13,7 +14,11 @@ export default function ImagePicker({ value, onChange }) {
   const [uploadName, setUploadName] = useState('');
   const [uploadFolder, setUploadFolder] = useState('misc');
   const [filterFolder, setFilterFolder] = useState('all');
+  const [arranging, setArranging] = useState(false);
+  const [dragFolder, setDragFolder] = useState(null);
   const inputRef = useRef(null);
+  // Only listen to config while the library is open — many pickers can be mounted at once.
+  const { config, updateConfig } = useAppConfig({ enabled: open });
 
   const load = async () => {
     setLoading(true);
@@ -64,10 +69,23 @@ export default function ImagePicker({ value, onChange }) {
     return images.filter(i => i.folder === filterFolder);
   }, [images, filterFolder]);
 
-  const folders = useMemo(() => {
-    const found = new Set(images.map(i => i.folder).filter(Boolean));
-    return ['all', ...IMAGE_FOLDERS, ...[...found].filter(f => !IMAGE_FOLDERS.includes(f))];
-  }, [images]);
+  // Saved order wins; any folder not in it (new uploads, new defaults) falls in after, in default order.
+  const orderedFolders = useMemo(() => {
+    const found = images.map(i => i.folder).filter(Boolean);
+    const known = [...new Set([...IMAGE_FOLDERS, ...found])];
+    const saved = (config.imageFolderOrder ?? []).filter(f => known.includes(f));
+    return [...saved, ...known.filter(f => !saved.includes(f))];
+  }, [images, config.imageFolderOrder]);
+
+  const folders = useMemo(() => ['all', ...orderedFolders], [orderedFolders]);
+
+  const moveFolder = (from, to) => {
+    if (to < 0 || to >= orderedFolders.length || from === to) return;
+    const next = [...orderedFolders];
+    const [f] = next.splice(from, 1);
+    next.splice(to, 0, f);
+    updateConfig({ imageFolderOrder: next }).catch(e => alert(`Could not save order: ${e.message}`));
+  };
 
   return (
     <>
@@ -127,7 +145,7 @@ export default function ImagePicker({ value, onChange }) {
             {/* Folder filter */}
             <div style={{ padding: '10px 16px', borderBottom: '1px solid #f0e4cc', display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
               <span style={{ fontSize: 10, color: '#b0956e', fontWeight: 600, textTransform: 'uppercase', letterSpacing: 1, marginRight: 4 }}>Folder</span>
-              {folders.map(f => (
+              {!arranging && folders.map(f => (
                 <button key={f} onClick={() => setFilterFolder(f)} style={{
                   padding: '4px 10px', borderRadius: 12, fontSize: 11, fontWeight: 600,
                   background: filterFolder === f ? '#b8860b' : '#fdf6ec',
@@ -136,6 +154,32 @@ export default function ImagePicker({ value, onChange }) {
                   cursor: 'pointer',
                 }}>{f}</button>
               ))}
+              {arranging && orderedFolders.map((f, i) => (
+                <div
+                  key={f}
+                  draggable
+                  onDragStart={() => setDragFolder(f)}
+                  onDragOver={e => e.preventDefault()}
+                  onDrop={e => { e.preventDefault(); if (dragFolder) moveFolder(orderedFolders.indexOf(dragFolder), i); setDragFolder(null); }}
+                  onDragEnd={() => setDragFolder(null)}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 2,
+                    padding: '2px 4px', borderRadius: 12, fontSize: 11, fontWeight: 600,
+                    background: '#fff', color: '#7a5230',
+                    border: '1px dashed #c9a96e', cursor: 'grab',
+                    opacity: dragFolder === f ? 0.4 : 1,
+                  }}
+                >
+                  <ArrowBtn label="◀" disabled={i === 0} onClick={() => moveFolder(i, i - 1)} />
+                  <span style={{ padding: '0 4px' }}>{f}</span>
+                  <ArrowBtn label="▶" disabled={i === orderedFolders.length - 1} onClick={() => moveFolder(i, i + 1)} />
+                </div>
+              ))}
+              <button onClick={() => setArranging(a => !a)} style={{
+                marginLeft: 'auto', padding: '4px 10px', borderRadius: 12, fontSize: 11, fontWeight: 600,
+                background: arranging ? '#b8860b' : 'none', color: arranging ? '#fff' : '#b0956e',
+                border: arranging ? '1px solid #b8860b' : '1px solid transparent', cursor: 'pointer',
+              }}>{arranging ? 'Done' : '⇄ Arrange'}</button>
             </div>
 
             {/* Pending upload prompt */}
@@ -151,7 +195,7 @@ export default function ImagePicker({ value, onChange }) {
                   <select value={uploadFolder} onChange={e => setUploadFolder(e.target.value)} style={{
                     padding: '5px 8px', fontSize: 12, border: '1.5px solid #e0cba8', borderRadius: 6, background: '#fff', color: '#3d2408', outline: 'none',
                   }}>
-                    {IMAGE_FOLDERS.map(f => <option key={f} value={f}>{f}</option>)}
+                    {orderedFolders.filter(f => IMAGE_FOLDERS.includes(f)).map(f => <option key={f} value={f}>{f}</option>)}
                   </select>
                   <button onClick={confirmUpload} disabled={uploading || !uploadName.trim()} style={{
                     padding: '5px 14px', background: uploading || !uploadName.trim() ? '#ccc' : 'linear-gradient(135deg, #b8860b, #d4a017)',
@@ -216,5 +260,16 @@ export default function ImagePicker({ value, onChange }) {
         document.body
       )}
     </>
+  );
+}
+function ArrowBtn({ label, disabled, onClick }) {
+  return (
+    <button onClick={onClick} disabled={disabled} style={{
+      width: 18, height: 18, padding: 0, borderRadius: '50%',
+      background: disabled ? 'transparent' : '#fdf6ec', border: 'none',
+      color: disabled ? '#e0cba8' : '#b8860b', fontSize: 8,
+      cursor: disabled ? 'default' : 'pointer',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+    }}>{label}</button>
   );
 }

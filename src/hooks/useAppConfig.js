@@ -10,15 +10,17 @@ export const DEFAULT_CONFIG = {
   slideBaseline: 10, // seconds — floor before content scaling
 };
 
-export function useAppConfig() {
+// Pass { enabled: false } to skip the Firestore listener (e.g. while a modal is closed).
+export function useAppConfig({ enabled = true } = {}) {
   const [config, setConfig] = useState(DEFAULT_CONFIG);
 
   useEffect(() => {
+    if (!enabled) return;
     const unsub = onSnapshot(CONFIG_REF, snap => {
       if (snap.exists()) setConfig({ ...DEFAULT_CONFIG, ...snap.data() });
     });
     return unsub;
-  }, []);
+  }, [enabled]);
 
   async function updateConfig(patch) {
     await setDoc(CONFIG_REF, patch, { merge: true });
