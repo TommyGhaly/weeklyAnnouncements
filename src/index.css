@@ -35,7 +35,8 @@ button {
   cursor: pointer;
 }
 
-input, textarea {
+/* Checkboxes/radios keep native sizing — width:100% + padding would stretch them across the row */
+input:not([type="checkbox"]):not([type="radio"]), textarea {
   font-family: 'Inter', sans-serif;
   font-size: 14px;
   padding: 8px 12px;
@@ -48,7 +49,7 @@ input, textarea {
   width: 100%;
 }
 
-input:focus, textarea:focus {
+input:not([type="checkbox"]):not([type="radio"]):focus, textarea:focus {
   border-color: var(--gold);
 }
 
