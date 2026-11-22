@@ -45,7 +45,9 @@ export default function CopyAnnouncementsPanel({ sessions, existing, onCopy, onC
         {sources.map(({ s, anns }) => {
           const canSelect = selectable(anns).length > 0;
           return (
-            <div key={s.id} style={{ border: '1px solid #f0e2cc', borderRadius: 10, overflow: 'hidden' }}>
+            // flexShrink 0: overflow:hidden drops a flex item's min-height to 0, so without it the
+            // cards squash to fit the scroll area (clipping their rows) instead of overflowing it.
+            <div key={s.id} style={{ border: '1px solid #f0e2cc', borderRadius: 10, overflow: 'hidden', flexShrink: 0 }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8, padding: '8px 12px', background: '#fffaf3', borderBottom: '1px solid #f0e2cc' }}>
                 <div style={{ minWidth: 0, display: 'flex', alignItems: 'baseline', gap: 6, flexWrap: 'wrap' }}>
                   <span style={{ fontSize: 12, fontWeight: 700, color: '#3d2408' }}>{s.label ?? s.presetName ?? 'Untitled'}</span>
